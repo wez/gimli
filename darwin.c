@@ -14,6 +14,7 @@
 
 #include <libgen.h>
 #include <Security/Authorization.h>
+#include <mach/task_info.h>
 
 #if defined(__ppc__)
 # error this code assumes intel architecture
@@ -415,29 +416,52 @@ static void discover_maps(void)
   struct gimli_dyld_bootstrap dyld;
   int fd;
   uint32_t hdr_offset = 0;
+  struct task_dyld_info tinfo;
+  mach_msg_type_number_t count = TASK_DYLD_INFO_COUNT;
+  kern_return_t kret;
 
+  /* ask the system for the true address of the all_image_info in the
+   * target process */
+  kret = task_info(targetTask, TASK_DYLD_INFO, (task_info_t)&tinfo, &count);
+  dyld.info = tinfo.all_image_info_addr;
+
+  /* load the dyld symbols so that we can find out whether sharedcache
+   * is in use */
   fd = read_mach_header("/usr/lib/dyld", &hdr_offset, &hdr);
   if (fd == -1) {
     return;
   }
   memset(&dyld, 0, sizeof(dyld));
   walk_symtab(&dyld, find_dyld_symbols, fd, 0, hdr_offset, &hdr);
+  if (dyld.cache) {
+    /* adjust the cache information by the same slide that we observe
+     * for the difference between the symbol for _dyld_all_image_infos
+     * and the value we got from the task_info above */
+    dyld.cache -= (void*)tinfo.all_image_info_addr - dyld.info;
+  }
+  dyld.info = tinfo.all_image_info_addr;
 
   if (dyld.info) {
-    gimli_read_mem(dyld.info, &infos, sizeof(infos));
+    if (gimli_read_mem(dyld.info, &infos, sizeof(infos)) != sizeof(infos)) {
+      fprintf(stderr, "DYLD: failed to read _dyld_all_image_infos from %p\n"
+          "DYLD: no maps, symbols or DWARF info will be available\n",
+          dyld.info);
+      return;
+    }
   } else {
-    fprintf(stderr, "DYLD: unable to locate _dyld_all_image_infos\n");
+    fprintf(stderr, "DYLD: unable to locate _dyld_all_image_infos\n"
+          "DYLD: no maps, symbols or DWARF info will be available\n"
+        );
     return;
   }
 
   /* 10.5 introduces a shared cache; when processing images, if the image
    * addresses match against the shared cache, then we need to perform
    * an additional computation to obtain the relocated address in the target */
-  if (dyld.cache) {
-    gimli_read_mem(dyld.cache, &shared_cache, sizeof(shared_cache));
+  have_shared_cache = 0;
+  if (dyld.cache && gimli_read_mem(dyld.cache, &shared_cache,
+        sizeof(shared_cache)) == sizeof(shared_cache)) {
     have_shared_cache = 1;
-  } else {
-    have_shared_cache = 0;
   }
 
   /* walk the image info and determine the image names */
