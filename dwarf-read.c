@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2009-2010 Message Systems, Inc. All rights reserved
+ * Copyright (c) 2009-2012 Message Systems, Inc. All rights reserved
  * For licensing information, see:
  * https://bitbucket.org/wez/gimli/src/tip/LICENSE
  */
@@ -56,7 +56,8 @@ int64_t dw_read_leb128(const uint8_t **ptr, const uint8_t *end)
   return res;
 }
 
-int dw_read_encptr(uint8_t enc, const uint8_t **ptr, const uint8_t *end,
+int dw_read_encptr(gimli_proc_t proc,
+  uint8_t enc, const uint8_t **ptr, const uint8_t *end,
   uint64_t pc, uint64_t *output)
 {
   const uint8_t *cur = *ptr;
@@ -70,13 +71,13 @@ int dw_read_encptr(uint8_t enc, const uint8_t **ptr, const uint8_t *end,
     return 0;
 
     if (sizeof(void*) == 8) {
-      if (gimli_read_mem((void*)(intptr_t)res, &res, sizeof(res))
+      if (gimli_read_mem(proc, (void*)(intptr_t)res, &res, sizeof(res))
           != sizeof(*output)) {
         return 0;
       }
     } else {
       uint32_t r;
-      if (gimli_read_mem((void*)(intptr_t)res, &r, sizeof(r)) != sizeof(r)) {
+      if (gimli_read_mem(proc, (void*)(intptr_t)res, &r, sizeof(r)) != sizeof(r)) {
         return 0;
       }
       res = r;
@@ -92,7 +93,7 @@ int dw_read_encptr(uint8_t enc, const uint8_t **ptr, const uint8_t *end,
       break;
     case DW_EH_PE_datarel:
     default:
-      fprintf(stderr, "DWARF: unhandled pointer application value: %02x at %p\n", enc & DW_EH_PE_APPL_MASK, pc);
+      fprintf(stderr, "DWARF: unhandled pointer application value: %02x at %p\n", enc & DW_EH_PE_APPL_MASK, (void*)pc);
       return 0;
   }
 
@@ -160,7 +161,7 @@ int dw_read_encptr(uint8_t enc, const uint8_t **ptr, const uint8_t *end,
       }
       break;
     default:
-      fprintf(stderr, "DWARF: unhandled DW_EH_PE value: 0x%02x (masked to 0x%02x) at %p\n", enc, enc & 0x0f, pc);
+      fprintf(stderr, "DWARF: unhandled DW_EH_PE value: 0x%02x (masked to 0x%02x) at %p\n", enc, enc & 0x0f, (void*)pc);
       return 0;
   }
 
@@ -191,14 +192,15 @@ static int search_compare_line(const void *pc, const void *L)
 
 /* read dwarf info to determine the source/line information for a given
  * address */
-int dwarf_determine_source_line_number(void *pc, char *src, int srclen,
+int dwarf_determine_source_line_number(gimli_proc_t proc,
+  void *pc, char *src, int srclen,
   uint64_t *lineno)
 {
   struct gimli_object_mapping *m;
-  struct gimli_object_file *f;
+  gimli_mapped_object_t f;
   struct gimli_line_info *linfo;
 
-  m = gimli_mapping_for_addr(pc);
+  m = gimli_mapping_for_addr(proc, pc);
   if (!m) return 0;
   f = m->objfile;
 
@@ -223,7 +225,7 @@ int dwarf_determine_source_line_number(void *pc, char *src, int srclen,
 }
 
 
-static int process_line_numbers(struct gimli_object_file *f)
+static int process_line_numbers(gimli_mapped_object_t f)
 {
   struct gimli_section_data *s = NULL;
   struct {
@@ -303,7 +305,7 @@ static int process_line_numbers(struct gimli_object_file *f)
     data += sizeof(ver);
 
     if (debug) {
-      fprintf(stderr, "initlen is %llx (%d bit) ver=%u\n", 
+      fprintf(stderr, "initlen is 0x%" PRIx64 " (%d bit) ver=%u\n",
         len, is_64 ? 64 : 32, ver);
     }
 
@@ -321,7 +323,7 @@ static int process_line_numbers(struct gimli_object_file *f)
 
     if (debug) {
       fprintf(stderr,
-        "headerlen is %llu, min_insn_len=%u line_base=%d line_range=%u\n"
+        "headerlen is %" PRIu64 ", min_insn_len=%u line_base=%d line_range=%u\n"
         "opcode_base=%u\n",
         len, hdr_1.min_insn_len, hdr_1.line_base, hdr_1.line_range,
         hdr_1.opcode_base);
@@ -331,7 +333,7 @@ static int process_line_numbers(struct gimli_object_file *f)
     for (i = 1; i < hdr_1.opcode_base; i++) {
       opcode_lengths[i-1] = dw_read_uleb128(&data, cuend);
       if (debug) {
-        fprintf(stderr, "op len [%d] = %llu\n", i, opcode_lengths[i-1]);
+        fprintf(stderr, "op len [%d] = %" PRIu64 "\n", i, opcode_lengths[i-1]);
       }
     }
     /* include_directories */
@@ -399,13 +401,13 @@ static int process_line_numbers(struct gimli_object_file *f)
               data += strlen(fname)+1;
               fno = dw_read_uleb128(&data, cuend);
               filenames[fno] = fname;
-              if (debug) fprintf(stderr, "define_files[%d] = %s\n", fno, fname);
+              if (debug) fprintf(stderr, "define_files[%" PRIu64 "] = %s\n", fno, fname);
               break;
             }
 
           default:
             fprintf(stderr,
-              "DWARF: line nos.: unhandled extended op=%02x, len=%llu\n",
+              "DWARF: line nos.: unhandled extended op=%02x, len=%" PRIu32 "\n",
               op, initlen);
             ;
         }
@@ -423,7 +425,7 @@ static int process_line_numbers(struct gimli_object_file *f)
             {
               int64_t d = dw_read_leb128(&data, cuend);
               if (debug) {
-                fprintf(stderr, "advance_line from %lld to %lld\n",
+                fprintf(stderr, "advance_line from %" PRId64 " to %" PRId64 "\n",
                   regs.line, regs.line + d);
               }
               regs.line += d;
@@ -435,7 +437,7 @@ static int process_line_numbers(struct gimli_object_file *f)
               uint64_t u = dw_read_uleb128(&data, cuend);
               regs.address += u * hdr_1.min_insn_len;
               if (debug) {
-                fprintf(stderr, "advance_pc: addr=%llx\n", regs.address);
+                fprintf(stderr, "advance_pc: addr=0x%" PRIx64 "\n", (uintptr_t)regs.address);
               }
               break;
             }
@@ -443,14 +445,14 @@ static int process_line_numbers(struct gimli_object_file *f)
           {
             uint64_t u = dw_read_uleb128(&data, cuend);
             regs.file = u;
-            if (debug) fprintf(stderr, "set_file: %llu\n", regs.file);
+            if (debug) fprintf(stderr, "set_file: %" PRIu64 "\n", regs.file);
             break;
           }
           case DW_LNS_set_column:
           {
             uint64_t u = dw_read_uleb128(&data, cuend);
             regs.column = u;
-            if (debug) fprintf(stderr, "set_column: %llu\n", regs.column);
+            if (debug) fprintf(stderr, "set_column: %" PRIu64 "\n", regs.column);
             break;
           }
           case DW_LNS_negate_stmt:
@@ -465,7 +467,7 @@ static int process_line_numbers(struct gimli_object_file *f)
             regs.address += ((255 - hdr_1.opcode_base) /
                             hdr_1.line_range) * hdr_1.min_insn_len;
             if (debug) {
-              fprintf(stderr, "const_add_pc: addr=%llx\n", regs.address);
+              fprintf(stderr, "const_add_pc: addr=0x%" PRIx64 "\n", (uintptr_t)regs.address);
             }
             break;
           case DW_LNS_fixed_advance_pc:
@@ -475,7 +477,7 @@ static int process_line_numbers(struct gimli_object_file *f)
             data += sizeof(u);
             regs.address += u;
             if (debug) {
-              fprintf(stderr, "fixed_advance_pc: %llx\n", regs.address);
+              fprintf(stderr, "fixed_advance_pc: 0x%" PRIx64 "\n", (uintptr_t)regs.address);
             }
             break;
           }
@@ -494,7 +496,7 @@ static int process_line_numbers(struct gimli_object_file *f)
           case DW_LNS_set_isa:
             regs.isa = dw_read_uleb128(&data, cuend);
             if (debug) {
-              fprintf(stderr, "set_isa: %llx\n", regs.isa);
+              fprintf(stderr, "set_isa: 0x%" PRIx64 "\n", regs.isa);
             }
             break;
           default:
@@ -509,7 +511,7 @@ static int process_line_numbers(struct gimli_object_file *f)
         op -= hdr_1.opcode_base;
 
         if (debug) {
-          fprintf(stderr, "special before: addr = %p, line = %lld\n",
+          fprintf(stderr, "special before: addr = %p, line = %" PRId64 "\n",
               regs.address, regs.line);
           fprintf(stderr, "line_base = %d, line_range = %d\n",
             hdr_1.line_base, hdr_1.line_range);
@@ -518,7 +520,7 @@ static int process_line_numbers(struct gimli_object_file *f)
         regs.address += (op / hdr_1.line_range) * hdr_1.min_insn_len;
         regs.line += hdr_1.line_base + (op % hdr_1.line_range);
         if (debug) {
-          fprintf(stderr, "special: addr = %p, line = %lld\n",
+          fprintf(stderr, "special: addr = %p, line = %" PRId64 "\n",
             regs.address, regs.line);
         }
       }
@@ -538,14 +540,16 @@ static int process_line_numbers(struct gimli_object_file *f)
 
   /* make a pass to fill in the end member to make it easier to find
    * an approx match */
-  for (i = 0; i < f->linecount - 1; i++) {
-    f->lines[i].end = f->lines[i+1].addr;
+  if (f->linecount) {
+    for (i = 0; i < f->linecount - 1; i++) {
+      f->lines[i].end = f->lines[i+1].addr;
+    }
   }
 
   return 0;
 }
 
-int gimli_process_dwarf(struct gimli_object_file *f)
+int gimli_process_dwarf(gimli_mapped_object_t f)
 {
   /* pull out additional information from dwarf debugging information.
    * In particular, we can scan the .debug_info section to resolve
@@ -580,8 +584,8 @@ static void local_hexdump(void *addr, int p, int n)
   }
 }
 
-static int get_sect_data(struct gimli_object_file *f, const char *name,
-  const uint8_t **startptr, const uint8_t **endptr, gimli_object_file_t **elf)
+static int get_sect_data(gimli_mapped_object_t f, const char *name,
+  const uint8_t **startptr, const uint8_t **endptr, gimli_object_file_t *elf)
 {
   const uint8_t *data = NULL, *end = NULL;
   struct gimli_section_data *s;
@@ -620,7 +624,7 @@ static int get_sect_data(struct gimli_object_file *f, const char *name,
 int dw_calc_location(struct gimli_unwind_cursor *cur,
   uint64_t compilation_unit_base_addr,
   struct gimli_object_mapping *m, uint64_t offset, uint64_t *res,
-  gimli_object_file_t *elf, int *is_stack)
+  gimli_object_file_t elf, int *is_stack)
 {
   const uint8_t *data, *end;
   void *rstart = NULL, *rend = NULL;
@@ -703,7 +707,7 @@ static const uint8_t *find_abbr(const uint8_t *abbr, const uint8_t *end,
 static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
   const uint8_t **datap, const uint8_t *end,
   uint64_t *vptr, const uint8_t **byteptr,
-  gimli_object_file_t *elf)
+  gimli_object_file_t elf)
 {
   uint64_t u64;
   int64_t s64;
@@ -822,7 +826,7 @@ static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
       *vptr = strlen((char*)data);
       data += 1 + *vptr;
       break;
-    
+
     case DW_FORM_indirect:
       form = dw_read_uleb128(datap, end);
       if (form == DW_FORM_indirect) {
@@ -833,7 +837,7 @@ static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
       return get_value(form, addr_size, is_64, datap, end, vptr, byteptr, elf);
 
     default:
-      printf("DWARF: unhandled FORM: 0x%llx\n", form);
+      printf("DWARF: unhandled FORM: 0x%" PRIx64 "\n", form);
       return 0;
   }
 
@@ -869,7 +873,7 @@ static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
       break;
   }
   if (debug) {
-  printf("value normalized to form 0x%llx val=0x%llx bytep=%p %s\n",
+    printf("value normalized to form 0x%" PRIx64 " val=0x%" PRIx64 " bytep=%p %s\n",
        form, *vptr, *byteptr, form == DW_FORM_string ? (char*)*byteptr : "");
   }
 
@@ -884,7 +888,7 @@ static struct gimli_dwarf_die *process_die(
   const uint8_t **datap, const uint8_t *end,
   const uint8_t *abbrstart, const uint8_t *abbrend,
   int is_64, uint8_t addr_size,
-  gimli_object_file_t *elf,
+  gimli_object_file_t elf,
   gimli_hash_t diehash
 )
 {
@@ -909,7 +913,7 @@ static struct gimli_dwarf_die *process_die(
   }
   abbr = find_abbr(abbrstart, abbrend, abbr_code);
   if (!abbr) {
-    printf("Couldn't locate abbrev code %lld\n", abbr_code);
+    printf("Couldn't locate abbrev code %" PRId64 "\n", abbr_code);
     *datap = data;
     return NULL;
   }
@@ -922,7 +926,7 @@ static struct gimli_dwarf_die *process_die(
   die = calloc(1, sizeof(*die));
   die->offset = offset;
   die->tag = tag;
-  snprintf(diename, sizeof(diename)-1, "%llx", offset);
+  snprintf(diename, sizeof(diename)-1, "%" PRIx64, offset);
   gimli_hash_insert(diehash, diename, die);
 //  printf("die @ %s tag=%llx\n", diename, die->tag);
 
@@ -994,13 +998,14 @@ static struct gimli_dwarf_die *process_die(
   return die;
 }
 
-struct gimli_dwarf_die *gimli_dwarf_get_die(struct gimli_object_file *f,
+struct gimli_dwarf_die *gimli_dwarf_get_die(
+  gimli_mapped_object_t f,
   uint64_t offset)
 {
   const uint8_t *data, *datastart, *end, *next;
   const uint8_t *abbr, *abbrstart, *abbrend;
   const uint8_t *cuend, *custart;
-  gimli_object_file_t *elf = NULL;
+  gimli_object_file_t elf = NULL;
   uint64_t initlen;
   uint32_t len32;
   uint16_t ver;
@@ -1022,11 +1027,14 @@ struct gimli_dwarf_die *gimli_dwarf_get_die(struct gimli_object_file *f,
     data = datastart;
 
     if (!gimli_object_is_executable(f->elf)) {
+      int i;
       struct gimli_object_mapping *m;
 
-      for (m = gimli_mappings; m; m = m->next) {
+      for (i = 0; i < the_proc->nmaps; i++) {
+        m = the_proc->mappings[i];
+
         if (m->objfile == f) {
-          reloc = (uint64_t)(intptr_t)m->base;
+          reloc = (uint64_t)(intptr_t)m->base; // FIXME: abstract this out
         }
       }
       //    printf("Using reloc adjustment for %s: 0x%llx\n", m->objfile->objname, reloc);
@@ -1092,7 +1100,7 @@ struct gimli_dwarf_die *gimli_dwarf_get_die(struct gimli_object_file *f,
     }
   }
 
-  snprintf(diename, sizeof(diename)-1, "%llx", offset);
+  snprintf(diename, sizeof(diename)-1, "%" PRIx64, offset);
   if (gimli_hash_find(f->dies, diename, (void**)&die)) {
     return die;
   }
@@ -1148,7 +1156,7 @@ static int load_arange(struct gimli_object_mapping *m)
 {
   struct gimli_section_data *s = NULL;
   const uint8_t *data, *end, *next;
-  gimli_object_file_t *elf = NULL;
+  gimli_object_file_t elf = NULL;
   uint64_t reloc = 0;
   uint32_t len32;
   int is_64 = 0;
@@ -1236,8 +1244,8 @@ static int load_arange(struct gimli_object_mapping *m)
 
       addr += reloc;
 
-      m->arange = realloc(m->arange, (m->num_arange + 1) * sizeof(*arange));
-      arange = &m->arange[m->num_arange++];
+      m->objfile->arange = realloc(m->objfile->arange, (m->objfile->num_arange + 1) * sizeof(*arange));
+      arange = &m->objfile->arange[m->objfile->num_arange++];
       arange->addr = (uint64_t)(intptr_t)addr;
       arange->len = l;
       arange->di_offset = di_offset;
@@ -1248,7 +1256,7 @@ static int load_arange(struct gimli_object_mapping *m)
   }
 
   /* ensure ascending order */
-  qsort(m->arange, m->num_arange, sizeof(struct dw_die_arange),
+  qsort(m->objfile->arange, m->objfile->num_arange, sizeof(struct dw_die_arange),
       sort_compare_arange);
 
   return 1;
@@ -1278,7 +1286,7 @@ struct gimli_dwarf_die *gimli_dwarf_get_die_for_pc(
   struct gimli_dwarf_die *die;
   struct dw_die_arange *arange;
 
-  m = gimli_mapping_for_addr(cur->st.pc);
+  m = gimli_mapping_for_addr(cur->proc, cur->st.pc);
   if (!m) {
     return NULL;
   }
@@ -1287,11 +1295,11 @@ struct gimli_dwarf_die *gimli_dwarf_get_die_for_pc(
     return NULL;
   }
 
-  if (!m->arange && !load_arange(m)) {
+  if (!m->objfile->arange && !load_arange(m)) {
     return NULL;
   }
 
-  arange = bsearch(cur, m->arange, m->num_arange, sizeof(*arange),
+  arange = bsearch(cur, m->objfile->arange, m->objfile->num_arange, sizeof(*arange),
       search_compare_arange);
   if (arange) {
     die = gimli_dwarf_get_die(m->objfile, arange->di_offset);
@@ -1326,7 +1334,7 @@ struct gimli_dwarf_die *gimli_dwarf_get_die_for_pc(
   return NULL;
 }
 
-const char *gimli_dwarf_resolve_type_name(struct gimli_object_file *f,
+const char *gimli_dwarf_resolve_type_name(gimli_mapped_object_t f,
   struct gimli_dwarf_attr *type)
 {
   struct gimli_dwarf_die *td, *kid;
@@ -1411,7 +1419,7 @@ const char *gimli_dwarf_resolve_type_name(struct gimli_object_file *f,
           if (kid->tag != DW_TAG_subrange_type) continue;
           if (gimli_dwarf_die_get_uint64_t_attr(kid, DW_AT_upper_bound, &upper))
           {
-            sprintf((char*)namestr, "[%llu]", upper);
+            sprintf((char*)namestr, "[%" PRIu64 "]", upper);
             namestr += strlen(namestr);
           } else {
             sprintf((char*)namestr, "[]");
@@ -1421,14 +1429,15 @@ const char *gimli_dwarf_resolve_type_name(struct gimli_object_file *f,
         return strdup(namebuf);
 
       default:
-        printf("Unhandled tag %llx for type name (offset=<%llx>)\n", td->tag, td->offset);
+        printf("Unhandled tag 0x%" PRIx64 " for type name (offset=<%" PRIx64 ">)\n", td->tag, td->offset);
         return NULL;
     }
   }
   return NULL;
 }
 
-int gimli_dwarf_read_value(void *addr, int is_stack, void *out, uint64_t size)
+int gimli_dwarf_read_value(gimli_proc_t proc,
+    void *addr, int is_stack, void *out, uint64_t size)
 {
   uint32_t u32;
   uint16_t u16;
@@ -1436,7 +1445,7 @@ int gimli_dwarf_read_value(void *addr, int is_stack, void *out, uint64_t size)
   uint64_t v;
 
   if (is_stack) {
-    return gimli_read_mem(addr, out, size) == size;
+    return gimli_read_mem(proc, addr, out, size) == size;
   }
   /* otherwise, addr actually contains the value */
   v = (uint64_t)(intptr_t)addr;
@@ -1467,9 +1476,10 @@ static int do_before(
     const char *datatype, const char *varname,
     void *varaddr, uint64_t varsize)
 {
-  struct gimli_object_file *file;
+  gimli_mapped_object_t file;
 
-  for (file = gimli_files; file; file = file->next) {
+#if 0
+  for (file = cur->proc->files; file; file = file->next) {
     if (file->tracer_module &&
         file->tracer_module->api_version >= 2 &&
         file->tracer_module->before_print_frame_var) {
@@ -1481,6 +1491,7 @@ static int do_before(
       }
     }
   }
+#endif
 
   /* ideally would like to factor this out somewhere nicer...
    * When we see a siginfo_t, replace our usual render with a more terse
@@ -1490,8 +1501,8 @@ static int do_before(
     char namebuf[1024];
     siginfo_t si;
 
-    if (gimli_read_mem(varaddr, &si, sizeof(si)) == sizeof(si)) {
-      gimli_render_siginfo(&si, namebuf, sizeof(namebuf));
+    if (gimli_read_mem(cur->proc, varaddr, &si, sizeof(si)) == sizeof(si)) {
+      gimli_render_siginfo(cur->proc, &si, namebuf, sizeof(namebuf));
       printf("  siginfo_t *%s = %p\n    %s\n",
           varname, varaddr, namebuf);
       return 1;
@@ -1501,14 +1512,15 @@ static int do_before(
 }
 
 static int do_after(
-    struct gimli_unwind_cursor *cur,
+    struct gimli_unwind_cursor *cur, // FIXME: gimli_stack_frame_t
 //    int tid, int frameno, void *pcaddr, void *context,
     const char *datatype, const char *varname,
     void *varaddr, uint64_t varsize)
 {
-  struct gimli_object_file *file;
+  gimli_mapped_object_t file;
 
-  for (file = gimli_files; file; file = file->next) {
+#if 0
+  for (file = cur->proc->files; file; file = file->next) {
     if (file->tracer_module &&
         file->tracer_module->api_version >= 2 &&
         file->tracer_module->after_print_frame_var) {
@@ -1517,11 +1529,63 @@ static int do_after(
           cur->st.pc, (void*)cur, datatype, varname, varaddr, varsize);
     }
   }
+#endif
   return 0;
 }
 
+static void print_quoted_string(gimli_proc_t proc, gimli_addr_t addr)
+{
+  gimli_mem_ref_t ref;
+  gimli_err_t err;
+  char *buf, *end;
+  int len, i;
+#define STRING_AT_ONCE 1024
+
+  err = gimli_proc_mem_ref(proc, addr, STRING_AT_ONCE, &ref);
+  if (err != GIMLI_ERR_OK) {
+    printf(" <invalid address>\n");
+    return;
+  }
+
+  printf("\"");
+  while (1) {
+    buf = gimli_mem_ref_local(ref);
+    len = gimli_mem_ref_size(ref);
+    addr += len;
+    end = buf + len;
+
+    while (buf < end) {
+      if (buf[0] == '\0') goto done;
+      if (isprint(buf[0])) {
+        printf("%c", buf[0]);
+      } else if (buf[0] == '"') {
+        printf("\\\"");
+      } else if (buf[0] == '\\') {
+        printf("\\\\");
+      } else {
+        printf("\\x%02x", ((int)buf[0]) & 0xff);
+      }
+      buf++;
+    }
+
+    gimli_mem_ref_delete(ref);
+    err = gimli_proc_mem_ref(proc, addr, STRING_AT_ONCE, &ref);
+    if (err != GIMLI_ERR_OK) {
+      break;
+    }
+  }
+done:
+  printf("\"");
+  if (err != GIMLI_ERR_OK) {
+    printf(" <invalid read>");
+  }
+  printf("\n");
+
+  gimli_mem_ref_delete(ref);
+}
+
 static int show_param(struct gimli_unwind_cursor *cur,
-  struct gimli_object_file *f,
+  gimli_mapped_object_t f,
   struct gimli_dwarf_attr *type, void *addr, int is_stack,
   const char *name, const char *type_name,
   int indent, int mask, int shift)
@@ -1568,7 +1632,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
       case DW_TAG_packed_type:
         /* resolve to underlying type */
         type = gimli_dwarf_die_get_attr(td, DW_AT_type);
-        return show_param(cur, f, type, addr, is_stack, 
+        return show_param(cur, f, type, addr, is_stack,
                   name, type_name, indent,
           mask, shift);
 
@@ -1588,15 +1652,15 @@ static int show_param(struct gimli_unwind_cursor *cur,
           case DW_ATE_unsigned_char:
             switch (size) {
               case 8:
-                gimli_dwarf_read_value(addr, is_stack, &u64, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &u64, size);
                 if (mask) {
                   u64 >>= shift;
                   u64 &= mask;
                 }
-                printf("%llu (0x%llx)\n", u64, u64);
+                printf("%" PRIu64 " (0x%" PRIx64 ")\n", u64, u64);
                 break;
               case 4:
-                gimli_dwarf_read_value(addr, is_stack, &u32, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &u32, size);
                 if (mask) {
                   u32 >>= shift;
                   u32 &= mask;
@@ -1604,7 +1668,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
                 printf("%u (0x%x)\n", u32, u32);
                 break;
               case 2:
-                gimli_dwarf_read_value(addr, is_stack, &u16, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &u16, size);
                 if (mask) {
                   u16 >>= shift;
                   u16 &= mask;
@@ -1612,7 +1676,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
                 printf("%u (0x%x)\n", u16, u16);
                 break;
               case 1:
-                gimli_dwarf_read_value(addr, is_stack, &u8, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &u8, size);
                 if (mask) {
                   u8 >>= shift;
                   u8 &= mask;
@@ -1620,7 +1684,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
                 printf("%u (0x%2x)\n", u8, u8);
                 break;
               default:
-                printf("unhandled byte size %lld\n", size);
+                printf("unhandled byte size %" PRIu64 "\n", size);
                 return 0;
             }
             break;
@@ -1629,15 +1693,15 @@ static int show_param(struct gimli_unwind_cursor *cur,
           default:
             switch (size) {
               case 8:
-                gimli_dwarf_read_value(addr, is_stack, &s64, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &s64, size);
                 if (mask) {
                   s64 >>= shift;
                   s64 &= mask;
                 }
-                printf("%lld (0x%llx)\n", s64, s64);
+                printf("%" PRId64 " (0x%" PRIx64 ")\n", s64, s64);
                 break;
               case 4:
-                gimli_dwarf_read_value(addr, is_stack, &s32, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &s32, size);
                 if (mask) {
                   s32 >>= shift;
                   s32 &= mask;
@@ -1645,7 +1709,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
                 printf("%d (0x%x)\n", s32, s32);
                 break;
               case 2:
-                gimli_dwarf_read_value(addr, is_stack, &s16, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &s16, size);
                 if (mask) {
                   s16 >>= shift;
                   s16 &= mask;
@@ -1653,7 +1717,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
                 printf("%d (0x%x)\n", s16, s16);
                 break;
               case 1:
-                gimli_dwarf_read_value(addr, is_stack, &s8, size);
+                gimli_dwarf_read_value(cur->proc, addr, is_stack, &s8, size);
                 if (mask) {
                   s8 >>= shift;
                   s8 &= mask;
@@ -1661,7 +1725,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
                 printf("%d (0x%2x)\n", s8, s8);
                 break;
               default:
-                printf("unhandled byte size %lld\n", size);
+                printf("unhandled byte size %" PRId64 "\n", size);
                 return 0;
             }
             break;
@@ -1679,25 +1743,25 @@ static int show_param(struct gimli_unwind_cursor *cur,
         printf("%s%s%s = ", indentstr, type_name, name);
         switch (size) {
           case 8:
-            gimli_dwarf_read_value(addr, is_stack, &s64, size);
+            gimli_dwarf_read_value(cur->proc, addr, is_stack, &s64, size);
             break;
           case 4:
-            gimli_dwarf_read_value(addr, is_stack, &s32, size);
+            gimli_dwarf_read_value(cur->proc, addr, is_stack, &s32, size);
             s64 = s32;
             break;
           case 2:
-            gimli_dwarf_read_value(addr, is_stack, &s16, size);
+            gimli_dwarf_read_value(cur->proc, addr, is_stack, &s16, size);
             s64 = s16;
             break;
           case 1:
-            gimli_dwarf_read_value(addr, is_stack, &s8, size);
+            gimli_dwarf_read_value(cur->proc, addr, is_stack, &s8, size);
             s64 = s8;
             break;
         }
         for (kid = td->kids; kid; kid = kid->next) {
           if (kid->tag == DW_TAG_enumerator) {
             struct gimli_dwarf_attr *cv;
-            
+
             cv = gimli_dwarf_die_get_attr(kid, DW_AT_const_value);
             if (cv && (int64_t)cv->code == s64) {
               cv = gimli_dwarf_die_get_attr(kid, DW_AT_name);
@@ -1706,7 +1770,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
             }
           }
         }
-        printf("%lld (0x%llx)\n", s64, s64);
+        printf("%" PRId64 " (0x%" PRIx64 ")\n", s64, s64);
         if (do_hook) do_after(cur, type_name, name, addr, size);
         return 1;
 
@@ -1722,10 +1786,10 @@ static int show_param(struct gimli_unwind_cursor *cur,
       case DW_TAG_pointer_type:
         gimli_dwarf_die_get_uint64_t_attr(td, DW_AT_byte_size, &size);
         if (size == 4) {
-          gimli_dwarf_read_value(addr, is_stack, &u32, size);
+          gimli_dwarf_read_value(cur->proc, addr, is_stack, &u32, size);
           addr = (void*)(intptr_t)u32;
         } else {
-          gimli_dwarf_read_value(addr, is_stack, &u64, size);
+          gimli_dwarf_read_value(cur->proc, addr, is_stack, &u64, size);
           addr = (void*)(intptr_t)u64;
         }
         if (!type_name) {
@@ -1736,7 +1800,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
         }
 
         printf("%s%s%s = %p", indentstr, type_name, name, addr);
-        symname = gimli_pc_sym_name(addr, namebuf, sizeof(namebuf));
+        symname = gimli_pc_sym_name(cur->proc, addr, namebuf, sizeof(namebuf));
         if (symname && strlen(symname)) {
           printf(" (%s)", symname);
         }
@@ -1757,25 +1821,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
               && size == 1) {
             /* smells like a string */
             printf(" ");
-            if (gimli_read_mem(addr, namebuf, 1)) {
-              printf("\"");
-              while (gimli_read_mem(addr, namebuf, 1)) {
-                if (namebuf[0] == '\0') break;
-                if (isprint(namebuf[0])) {
-                  printf("%c", namebuf[0]);
-                } else if (namebuf[0] == '"') {
-                  printf("\\\"");
-                } else if (namebuf[0] == '\\') {
-                  printf("\\\\");
-                } else {
-                  printf("\\x%02x", ((int)namebuf[0]) & 0xff);
-                }
-                addr++;
-              }
-              printf("\"\n");
-            } else {
-              printf(" <invalid address>\n");
-            }
+            print_quoted_string(cur->proc, (gimli_addr_t)addr);
           } else if (indent < 6) {
             snprintf(namebuf, sizeof(namebuf)-1, "%p", addr);
             if (!gimli_hash_find(derefed_params, namebuf, NULL)) {
@@ -1786,7 +1832,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
               if (kid && kid->tag == DW_TAG_pointer_type) {
                 /* if we have a pointer to a pointer, actually de-ref
                  * the pointer for the next level call */
-                if (gimli_read_mem(addr, &addr, sizeof(addr)) == sizeof(addr)) {
+                if (gimli_read_mem(cur->proc, addr, &addr, sizeof(addr)) == sizeof(addr)) {
                   show_param(cur, f, attr, addr, 0,
                       namebuf, NULL, indent + 2, 0, 0);
                 }
@@ -1835,7 +1881,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
             }
           } else if (loc) {
             root = 0;
-            printf("Unhandled location form %llx for struct member\n",
+            printf("Unhandled location form 0x%" PRIx64 " for struct member\n",
               loc->form);
           } else {
             /* an omitted member location implies that it occupies the
@@ -1877,7 +1923,7 @@ static int show_param(struct gimli_unwind_cursor *cur,
         if (do_hook) do_after(cur, type_name, name, addr, size);
         return 1;
       default:
-        printf("Unhandled tag 0x%llx in show_param\n", td->tag);
+        printf("Unhandled tag 0x%" PRIx64 " in show_param\n", td->tag);
     }
   } else {
     printf("no type information\n");
@@ -1888,7 +1934,8 @@ static int show_param(struct gimli_unwind_cursor *cur,
 int gimli_get_parameter(void *context, const char *varname,
   const char **datatype, void **addr, uint64_t *size)
 {
-  struct gimli_unwind_cursor *cur = context;
+  gimli_stack_frame_t frame = context;
+  struct gimli_unwind_cursor *cur = &frame->cur;
   struct gimli_dwarf_die *die = gimli_dwarf_get_die_for_pc(cur);
   struct gimli_dwarf_die *td;
   uint64_t frame_base = 0;
@@ -1896,7 +1943,7 @@ int gimli_get_parameter(void *context, const char *varname,
   uint64_t comp_unit_base = 0;
   struct gimli_dwarf_attr *location, *type;
   struct gimli_dwarf_attr *name, *frame_base_attr;
-  struct gimli_object_mapping *m = gimli_mapping_for_addr(cur->st.pc);
+  struct gimli_object_mapping *m = gimli_mapping_for_addr(cur->proc, cur->st.pc);
   int had_params = 0;
   int is_stack = 0;
 
@@ -1905,7 +1952,7 @@ int gimli_get_parameter(void *context, const char *varname,
   }
 
   if (die->parent->tag == DW_TAG_compile_unit) {
-    gimli_dwarf_die_get_uint64_t_attr(die->parent, 
+    gimli_dwarf_die_get_uint64_t_attr(die->parent,
       DW_AT_low_pc, &comp_unit_base);
   }
 
@@ -1921,10 +1968,10 @@ int gimli_get_parameter(void *context, const char *varname,
             frame_base_attr->code, &frame_base, NULL, &is_stack);
         break;
       default:
-        printf("Unhandled frame base form %llx\n",
+        printf("Unhandled frame base form 0x%" PRIx64 "\n",
             frame_base_attr->form);
     }
-  } 
+  }
 
   for (die = die->kids; die; die = die->next) {
     if (die->tag == DW_TAG_formal_parameter) {
@@ -1952,10 +1999,10 @@ int gimli_get_parameter(void *context, const char *varname,
             }
             break;
           default:
-            printf("Unhandled location form %llx\n", location->form);
+            printf("Unhandled location form 0x%" PRIx64 "\n", location->form);
         }
       } else {
-        printf("no location attribute for parameter %s die->offset=%llx %s\n",
+        printf("no location attribute for parameter %s die->offset=0x%" PRIx64 " %s\n",
           name ? (char*)name->ptr : "?", die->offset, m->objfile->objname);
       }
 
@@ -2008,7 +2055,7 @@ static int show_die(struct gimli_unwind_cursor *cur,
         }
         break;
       default:
-        printf("Unhandled location form %llx\n", location->form);
+        printf("Unhandled location form 0x%" PRIx64 "\n", location->form);
     }
   } else if (name) {
     /* no location defined, so assume the compiler optimized it away */
@@ -2024,7 +2071,7 @@ static int show_die(struct gimli_unwind_cursor *cur,
   if (!show_param(cur, m->objfile, type,
         (void*)(intptr_t)res, is_stack,
         name ? (char*)name->ptr : "?", NULL, 2, 0, 0)) {
-    printf("    %s @ %llx (type data @ %llx)\n",
+    printf("    %s @ 0x%" PRIx64 " (type data @ 0x%" PRIx64 ")\n",
         name->ptr, res, type->code);
   }
 
@@ -2037,7 +2084,7 @@ int gimli_show_param_info(struct gimli_unwind_cursor *cur)
   uint64_t frame_base = 0;
   uint64_t comp_unit_base = 0;
   struct gimli_dwarf_attr *frame_base_attr;
-  struct gimli_object_mapping *m = gimli_mapping_for_addr(cur->st.pc);
+  struct gimli_object_mapping *m = gimli_mapping_for_addr(cur->proc, cur->st.pc);
   int had_params = 0;
 
   if (!die) {
@@ -2045,7 +2092,7 @@ int gimli_show_param_info(struct gimli_unwind_cursor *cur)
   }
 
   if (die->parent->tag == DW_TAG_compile_unit) {
-    gimli_dwarf_die_get_uint64_t_attr(die->parent, 
+    gimli_dwarf_die_get_uint64_t_attr(die->parent,
       DW_AT_low_pc, &comp_unit_base);
   }
 
@@ -2063,10 +2110,10 @@ int gimli_show_param_info(struct gimli_unwind_cursor *cur)
             frame_base_attr->code, &frame_base, NULL, &is_stack);
         break;
       default:
-        printf("Unhandled frame base form %llx\n",
+        printf("Unhandled frame base form 0x%" PRIx64 "\n",
             frame_base_attr->form);
     }
-  } 
+  }
 
   for (die = die->kids; die; die = die->next) {
     if (die->tag == DW_TAG_formal_parameter || die->tag == DW_TAG_variable) {
