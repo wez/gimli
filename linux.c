@@ -317,7 +317,7 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
     return 1;
 #else
     uint32_t a;
-    
+
     /* determine whether we have siginfo or not (see gimli_is_signal_frame
      * for more on this) */
     gimli_read_mem(cur->proc, cur->st.pc, &a, sizeof(a));
@@ -449,6 +449,68 @@ static void child_handler(int signo)
 //  printf("SIGCHLD: pid=%d\n", p);
 }
 
+static int is_stopped(int pid)
+{
+  char name[1024];
+  char buf[1024];
+  const char *cptr;
+  int fd, x;
+
+  snprintf(name, sizeof(name), "/proc/%d/status", pid);
+  fd = open(name, O_RDONLY);
+  if (fd == -1) {
+    return -errno;
+  }
+  x = read(fd, buf, sizeof(buf));
+  close(fd);
+  if (x < 0) {
+    return -errno;
+  }
+  buf[x] = '\0';
+
+  cptr = strstr(buf, "State:");
+  if (!cptr) {
+    return -ENOENT; // Shouldn't happen
+  }
+
+  cptr += strlen("State:");
+  while (isspace(*cptr)) {
+    cptr++;
+  }
+
+  return *cptr == 'T';
+}
+
+static int wait_for_stop(int wantpid, int iterations)
+{
+  int st, i;
+
+  for (i = 0; i < iterations; i++) {
+    int pid;
+
+    if (child_stopped) {
+      return 1;
+    }
+
+    pid = waitpid(wantpid, &st, WNOHANG);
+    if (pid == wantpid) {
+      child_stopped = 1;
+      return 1;
+    }
+
+    st = is_stopped(wantpid);
+    if (st == 1) {
+      child_stopped = 1;
+      return 1;
+    }
+
+    fprintf(stderr, "waiting for pid %d to stop (saw %d)\n", wantpid, pid);
+    sleep(1);
+  }
+
+  return is_stopped(wantpid) == 1;
+}
+
 gimli_err_t gimli_attach(gimli_proc_t proc)
 {
   long ret;
@@ -458,7 +520,7 @@ gimli_err_t gimli_attach(gimli_proc_t proc)
   char name[1024];
 
   signal(SIGCHLD, child_handler);
-  
+
   ret = gimli_ptrace(PTRACE_ATTACH, proc->pid, NULL, NULL);
   if (ret != 0) {
     int err = errno;
@@ -479,28 +541,20 @@ gimli_err_t gimli_attach(gimli_proc_t proc)
     return 0;
   }
 
-  status = 0;
-  for (i = 0; i < 5; i++) {
-    int pid;
+  /* This feels like a kludge; we apparently lose the STOP signal somewhere
+   * for some apps, so we send a "reminder" */
+  if (!wait_for_stop(proc->pid, 5)) {
+    fprintf(stderr,
+        "child not stopped withing 5 seconds, sending another SIGSTOP\n");
 
-    if (child_stopped) {
-      break;
+    kill(proc->pid, SIGSTOP);
+
+    if (!wait_for_stop(proc->pid, 5)) {
+      fprintf(stderr,
+        "didn't detect child stop within 10 seconds, continuing anyway\n");
     }
-
-    pid = waitpid(proc->pid, &status, WNOHANG);
-    if (pid == proc->pid) {
-      child_stopped = 1;
-      break;
-    }
-
-    fprintf(stderr, "waiting for pid %d to stop (saw %d)\n", proc->pid, pid);
-    sleep(1);
   }
   signal(SIGCHLD, SIG_DFL);
-  if (!child_stopped) {
-    fprintf(stderr,
-        "didn't detect child stop within 5 seconds, continuing anyway\n");
-  }
 
   snprintf(name, sizeof(name), "/proc/%d/mem", proc->pid);
   proc->proc_mem = open(name, O_RDWR);
