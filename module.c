@@ -64,11 +64,11 @@ static gimli_iter_status_t v2_printer_shim(gimli_proc_t proc,
         mod->exename,
         frame ? frame->cur.tid : 0,
         frame ? frame->cur.frameno : 0,
-        frame ? frame->cur.st.pc : 0,
+        frame ? (void*)(intptr_t)frame->cur.st.pc : 0,
         frame,
         typename,
         varname,
-        (void*)addr,
+        (void*)(intptr_t)addr,
         size) == GIMLI_ANA_SUPPRESS) {
     return GIMLI_ITER_STOP;
   }

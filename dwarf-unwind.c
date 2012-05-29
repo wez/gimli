@@ -99,7 +99,7 @@ static int process_dwarf_insns(struct gimli_unwind_cursor *cur,
 
   if (debug) {
     fprintf(stderr,
-      "\nprocess insns: %p to %p, pc = %p\n", insns, insn_end, cur->st.pc);
+      "\nprocess insns: %p to %p, pc = " PTRFMT "\n", insns, insn_end, cur->st.pc);
   }
 
   while (pc <= (intptr_t)cur->st.pc && insns < insn_end) {
@@ -402,13 +402,14 @@ static int apply_regs(struct gimli_unwind_cursor *cur,
   struct dw_cie *cie)
 {
   int i;
-  void *pc = cur->st.pc;
-  void *fp = cur->st.fp;
-  void *regaddr;
-  void *val;
+  gimli_addr_t pc = cur->st.pc;
+  gimli_addr_t fp = cur->st.fp;
+  gimli_addr_t addrval;
+  gimli_addr_t val;
 
   if (debug) {
-    fprintf(stderr, "\napply_regs:\npc=%p fp=%p sp=%p\n",
+    fprintf(stderr, "\napply_regs:\npc=" PTRFMT " fp=" PTRFMT
+        " sp=" PTRFMT "\n",
       cur->st.pc, cur->st.fp, cur->st.sp);
   }
 
@@ -419,20 +420,17 @@ static int apply_regs(struct gimli_unwind_cursor *cur,
     if (debug) {
       fprintf(stderr, "CFA is stored relative to register %d\n", i);
     }
-    regaddr = gimli_reg_addr(cur, i);
-    if (!regaddr) {
-      fprintf(stderr, "DWARF: no address for reg %d\n", i);
+    if (!gimli_reg_get(cur, i, &addrval)) {
       return 0;
     }
-    regaddr = *(void**)regaddr;
     if (debug) {
-      fprintf(stderr, "target addr: %p + %" PRIu64 "\n",
-        regaddr, cur->dw.cols[GIMLI_DWARF_CFA_OFF].value);
+      fprintf(stderr, "target addr: " PTRFMT " + %" PRIu64 "\n",
+        addrval, cur->dw.cols[GIMLI_DWARF_CFA_OFF].value);
     }
-    regaddr += cur->dw.cols[GIMLI_DWARF_CFA_OFF].value;
-    fp = regaddr;
+    addrval += cur->dw.cols[GIMLI_DWARF_CFA_OFF].value;
+    fp = addrval;
     if (debug) {
-      fprintf(stderr, "fp=%p\n", fp);
+      fprintf(stderr, "fp=" PTRFMT "\n", fp);
     }
   } else if (cur->dw.cols[GIMLI_DWARF_CFA_REG].rule == DW_RULE_EXPR) {
     uint64_t ret;
@@ -440,14 +438,14 @@ static int apply_regs(struct gimli_unwind_cursor *cur,
       fprintf(stderr, "failed to evaluate DWARF expression\n");
       return 0;
     }
-    fp = (void*)(intptr_t)ret;
+    fp = ret;
   } else {
     fprintf(stderr, "DWARF: line %d: Unhandled rule %d for CFA\n",
       __LINE__, cur->dw.cols[GIMLI_DWARF_CFA_REG].rule);
     return 0;
   }
   if (debug) {
-    fprintf(stderr, "New CFA is %p\n", fp);
+    fprintf(stderr, "New CFA is " PTRFMT "\n", fp);
   }
 
   for (i = 0; i < GIMLI_DWARF_CFA_REG; i++) {
@@ -458,80 +456,55 @@ static int apply_regs(struct gimli_unwind_cursor *cur,
         /* retains same value */
         break;
       case DW_RULE_OFFSET:
-        regaddr = fp + cur->dw.cols[i].value;
+        addrval = fp + cur->dw.cols[i].value;
         if (debug) {
-          fprintf(stderr, "col %d: CFA relative, reading %p + %" PRIu64 " = %p\n", i,
-            fp, cur->dw.cols[i].value, regaddr);
+          fprintf(stderr, "col %d: CFA relative, reading " PTRFMT " + %" PRIu64 " = " PTRFMT "\n", i,
+            fp, cur->dw.cols[i].value, addrval);
         }
-        if (gimli_read_mem(cur->proc, (gimli_addr_t)regaddr,
+        if (gimli_read_mem(cur->proc, addrval,
               &val, sizeof(val)) != sizeof(val)) {
-          fprintf(stderr, "col %d: couldn't read value\n", i);
+          fprintf(stderr, "col %d: couldn't read value from " PTRFMT "\n", i, addrval);
           return 0;
         }
-        regaddr = gimli_reg_addr(cur, i);
-        if (!regaddr) {
-          printf("couldn't find address for column %d\n", i);
-          return 0;
-        }
-        *(void**)regaddr = val;
         if (debug) {
-          fprintf(stderr, "Setting col %d to %p\n", i, val);
+          fprintf(stderr, "Setting col %d to " PTRFMT "\n", i, val);
         }
+        gimli_reg_set(cur, i, val);
         break;
       case DW_RULE_REG:
-        regaddr = gimli_reg_addr(cur, cur->dw.cols[i].value);
-        if (!regaddr) {
-          printf("Couldn't find address for register %" PRIu64 "\n",
-            cur->dw.cols[i].value);
+        if (!gimli_reg_get(cur, cur->dw.cols[i].value, &val)) {
           return 0;
         }
-        val = *(void**)regaddr;
-        regaddr = gimli_reg_addr(cur, i);
-        if (!regaddr) {
-          printf("couldn't find address for column %d\n", i);
-          return 0;
-        }
-        *(void**)regaddr = val;
         if (debug) {
-          fprintf(stderr, "Setting col %d to %p\n", i, val);
+          fprintf(stderr, "Setting col %d to " PTRFMT "\n", i, val);
         }
+        gimli_reg_set(cur, i, val);
         break;
       case DW_RULE_EXPR:
         {
           uint64_t ret;
-          if (!eval_expr(i, (uint64_t)(intptr_t)fp, &ret, cur)) {
+          if (!eval_expr(i, fp, &ret, cur)) {
             fprintf(stderr, "failed to evaluate DWARF expression\n");
             return 0;
           }
-          regaddr = gimli_reg_addr(cur, i);
-          if (!regaddr) {
-            printf("couldn't find address for column %d\n", i);
-            return 0;
-          }
-          val = (void*)(intptr_t)ret;
-          *(void**)regaddr = val;
           if (debug) {
-            fprintf(stderr, "Setting col %d to %p\n", i, val);
+            fprintf(stderr, "Setting col %d to " PTRFMT "\n", i, ret);
           }
+          gimli_reg_set(cur, i, ret);
           break;
         }
 
       case DW_RULE_VAL_EXPR:
         {
           uint64_t ret;
-          if (!eval_expr(i, (uint64_t)(intptr_t)fp, &ret, cur)) {
+          if (!eval_expr(i, fp, &ret, cur)) {
             fprintf(stderr, "failed to evaluate DWARF expression\n");
             return 0;
           }
-          regaddr = gimli_reg_addr(cur, i);
-          if (!regaddr) {
-            printf("couldn't find address for column %d\n", i);
-            return 0;
-          }
-          *(void**)regaddr = (void*)(intptr_t)ret;
           if (debug) {
-            fprintf(stderr, "Setting col %d to 0x%" PRIx64 "\n", i, ret);
+            fprintf(stderr, "Setting col %d to " PTRFMT "\n", i, ret);
           }
+          gimli_reg_set(cur, i, ret);
           break;
         }
 
@@ -546,15 +519,11 @@ static int apply_regs(struct gimli_unwind_cursor *cur,
     fprintf(stderr, "retaddr is in col %" PRIu64 "\n", cie->ret_addr);
   }
 
-  regaddr = gimli_reg_addr(cur, cie->ret_addr);
-  if (!regaddr) {
-    fprintf(stderr, "DWARF: line %d: could not find address for return addr column %" PRIu64 "\n",
-      __LINE__, cie->ret_addr);
+  if (!gimli_reg_get(cur, cie->ret_addr, &pc)) {
     return 0;
   }
-  pc = *(void**)regaddr;
   if (debug) {
-    fprintf(stderr, "new pc is %p\n", pc);
+    fprintf(stderr, "new pc is " PTRFMT "\n", pc);
   }
   cur->st.pc = pc;
   cur->st.fp = fp;
@@ -772,7 +741,8 @@ static int load_fde(struct gimli_object_mapping *m)
                   s->addr + eh_frame - eh_start,
                   &cie->personality_routine)) {
               fprintf(stderr, "Error reading personality routine, "
-                  "enc=%02x offset: %lx\n", enc, eh_frame - eh_start);
+                  "enc=%02x offset: %" PRIx32 "\n", enc,
+                  (uint32_t)(eh_frame - eh_start));
               return 0;
             }
           } else if (*aug == 'R') {
@@ -886,7 +856,7 @@ static int load_fde(struct gimli_object_mapping *m)
 
 static int search_compare_fde(const void *PC, const void *FDE)
 {
-  intptr_t pc = (intptr_t)*(void**)PC;
+  gimli_addr_t pc = *(gimli_addr_t*)PC;
   struct dw_fde *fde = (struct dw_fde*)FDE;
 
   if (pc < fde->initial_loc) {
@@ -900,12 +870,12 @@ static int search_compare_fde(const void *PC, const void *FDE)
 }
 
 /* find the FDE for the specified pc address */
-static struct dw_fde *find_fde(gimli_proc_t proc, void *pc)
+static struct dw_fde *find_fde(gimli_proc_t proc, gimli_addr_t pc)
 {
   struct gimli_object_mapping *m;
   struct dw_fde *fde;
 
-  m = gimli_mapping_for_addr(proc, (gimli_addr_t)pc);
+  m = gimli_mapping_for_addr(proc, pc);
   if (!m) {
     return NULL;
   }
@@ -918,7 +888,8 @@ static struct dw_fde *find_fde(gimli_proc_t proc, void *pc)
     return NULL;
   }
 
-  fde = bsearch(&pc, m->objfile->fdes, m->objfile->num_fdes, sizeof(*fde), search_compare_fde);
+  fde = bsearch(&pc, m->objfile->fdes, m->objfile->num_fdes,
+      sizeof(*fde), search_compare_fde);
   if (fde) {
     return fde;
   }
@@ -936,7 +907,7 @@ int gimli_dwarf_unwind_next(struct gimli_unwind_cursor *cur)
   }
 
   if (debug) {
-    fprintf(stderr, "\nDWARF: unwind_next pc=%p fp=%p\n",
+    fprintf(stderr, "\nDWARF: unwind_next pc=" PTRFMT " fp=" PTRFMT "\n",
         cur->st.pc, cur->st.fp);
   }
 
@@ -944,13 +915,13 @@ int gimli_dwarf_unwind_next(struct gimli_unwind_cursor *cur)
   if (!fde) {
     cur->dwarffail = 1;
     if (debug) {
-      fprintf(stderr, "DWARF: no fde for pc=%p\n", cur->st.pc);
+      fprintf(stderr, "DWARF: no fde for pc=" PTRFMT "\n", cur->st.pc);
     }
     return 0;
   }
 
   if (debug) {
-    fprintf(stderr, "FDE: init=" PTRFMT "-" PTRFMT " pc=%p\n",
+    fprintf(stderr, "FDE: init=" PTRFMT "-" PTRFMT " pc=" PTRFMT "\n",
         fde->initial_loc,
         fde->addr_range,
         cur->st.pc);

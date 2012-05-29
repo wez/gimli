@@ -174,7 +174,7 @@ static void hexdump(gimli_proc_t proc, void *addr, int p, int n)
   addr = (char*)addr - (p * sizeof(data));
 
   for (i = 0; i < n; i++) {
-    x = gimli_read_mem(proc, (gimli_addr_t)addr, data, sizeof(data));
+    x = gimli_read_mem(proc, (intptr_t)addr, data, sizeof(data));
     printf("%p:   ", addr);
     for (j = 0; j < 4; j++) {
       gimli_addr_t a = data[j];
@@ -260,7 +260,7 @@ int gimli_is_signal_frame(struct gimli_unwind_cursor *cur)
         return 0;
       }
 
-      if (gimli_read_mem(cur->proc, frame.siptr, &cur->si, sizeof(cur->si))
+      if (gimli_read_mem(cur->proc, (intptr_t)frame.siptr, &cur->si, sizeof(cur->si))
           != sizeof(cur->si)) {
         printf("failed to read siginfo\n");
         return 0;
@@ -310,9 +310,9 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
     cur->st.regs.rsp = uc.uc_mcontext.sp;
     cur->st.regs.rip = uc.uc_mcontext.ip;
 
-    cur->st.fp = (void*)cur->st.regs.rsp;
-    cur->st.pc = (void*)cur->st.regs.rip;
-    cur->st.sp = (void*)cur->st.regs.rsp;
+    cur->st.fp = cur->st.regs.rsp;
+    cur->st.pc = cur->st.regs.rip;
+    cur->st.sp = cur->st.regs.rsp;
 
     return 1;
 #else
@@ -323,7 +323,7 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
     gimli_read_mem(cur->proc, cur->st.pc, &a, sizeof(a));
     if (a == 0x0077b858) {
       /* no SA_SIGINFO */
-      char *ptr;
+      gimli_addr_t ptr;
       struct sigcontext sc;
 
       /* Now we need to update our regs based on the sigcontext.
@@ -352,9 +352,9 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
       cur->st.regs.eax = sc.eax;
       cur->st.regs.eip = sc.eip;
 
-      cur->st.fp = (void*)cur->st.regs.ebp;
-      cur->st.sp = (void*)cur->st.regs.esp;
-      cur->st.pc = (void*)cur->st.regs.eip;
+      cur->st.fp = cur->st.regs.ebp;
+      cur->st.sp = cur->st.regs.esp;
+      cur->st.pc = cur->st.regs.eip;
       return 1;
 
     } else {
@@ -371,7 +371,7 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
         printf("failed to read rt_sigframe\n");
         return 0;
       }
-      if (gimli_read_mem(cur->proc, frame.uc, &uc, sizeof(uc))
+      if (gimli_read_mem(cur->proc, (intptr_t)frame.uc, &uc, sizeof(uc))
           != sizeof(uc)) {
         printf("failed to read ucontext\n");
         return 0;
@@ -387,9 +387,9 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
       cur->st.regs.eax = uc.uc_mcontext.gregs[REG_EAX];
       cur->st.regs.eip = uc.uc_mcontext.gregs[REG_EIP];
 
-      cur->st.fp = (void*)cur->st.regs.ebp;
-      cur->st.sp = (void*)cur->st.regs.esp;
-      cur->st.pc = (void*)cur->st.regs.eip;
+      cur->st.fp = cur->st.regs.ebp;
+      cur->st.sp = cur->st.regs.esp;
+      cur->st.pc = cur->st.regs.eip;
 
       return 1;
     }
@@ -406,22 +406,24 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
     return 1;
   }
 
-//printf("dwarf unwind didn't succeed, doing it the hard way\n");
-//printf("fp=%p sp=%p pc=%p\n", c.st.fp, c.st.sp, c.st.pc);
+#if 0
+printf("dwarf unwind didn't succeed, doing it the hard way\n");
+printf("fp=" PTRFMT " sp=" PTRFMT " pc=" PTRFMT "\n", c.st.fp, c.st.sp, c.st.pc);
+#endif
 
   if (c.st.fp) {
-    if (gimli_read_mem(cur->proc, (gimli_addr_t)c.st.fp,
+    if (gimli_read_mem(cur->proc, c.st.fp,
           &frame, sizeof(frame)) != sizeof(frame)) {
       memset(&frame, 0, sizeof(frame));
     }
 //    printf("read frame: fp=%p pc=%p\n", frame.next, frame.retpc);
     /* If we don't appear to be making progress, or we end up in page 0,
      * then assume we're done */
-    if (c.st.fp == frame.next || frame.next == (void*)0 || frame.retpc < (void*)1024) {
+    if (c.st.fp == (intptr_t)frame.next || frame.next == (void*)0 || frame.retpc < (void*)1024) {
       return 0;
     }
-    cur->st.fp = frame.next;
-    cur->st.pc = frame.retpc;
+    cur->st.fp = (intptr_t)frame.next;
+    cur->st.pc = (intptr_t)frame.retpc;
     if (cur->st.pc > 0 && !gimli_is_signal_frame(cur)) {
       cur->st.pc--;
     }

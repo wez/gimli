@@ -377,9 +377,9 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
     /* copy out register set */
     memcpy(cur->st.regs, uc.uc_mcontext.gregs, sizeof(cur->st.regs));
     /* update local copy */
-    cur->st.fp = (void*)cur->st.regs[R_FP];
-    cur->st.pc = (void*)cur->st.regs[R_PC];
-    cur->st.sp = (void*)cur->st.regs[R_SP];
+    cur->st.fp = cur->st.regs[R_FP];
+    cur->st.pc = cur->st.regs[R_PC];
+    cur->st.sp = cur->st.regs[R_SP];
     /* registers are all good for dwarf */
     cur->dwarffail = 0;
     return 1;
@@ -413,11 +413,11 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
       memset(&frame, 0, sizeof(frame));
     }
 
-    if (c.st.fp == (void*)frame.fr_savfp) {
+    if (c.st.fp == frame.fr_savfp) {
       return 0;
     }
-    cur->st.fp = (void*)frame.fr_savfp;
-    cur->st.pc = (void*)frame.fr_savpc;
+    cur->st.fp = frame.fr_savfp;
+    cur->st.pc = frame.fr_savpc;
 
     if (cur->st.pc > 0 && !gimli_is_signal_frame(cur)) {
       cur->st.pc--;
@@ -444,9 +444,9 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
           cur->st.regs[R_FP]);
       }
     }
-    cur->st.fp = (void*)cur->st.regs[R_FP];
-    cur->st.pc = (void*)cur->st.regs[R_PC];
-    cur->st.sp = (void*)cur->st.regs[R_SP];
+    cur->st.fp = cur->st.regs[R_FP];
+    cur->st.pc = cur->st.regs[R_PC];
+    cur->st.sp = cur->st.regs[R_SP];
     cur->dwarffail = 0;
 #endif
 
@@ -459,7 +459,7 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
        * that we're unwinding to that context.
        * To do this, we force in a -1 instruction pointer, which coincides
        * with the non-dwarf aware way of detecting a signal frame */
-      cur->st.pc = (void*)-1;
+      cur->st.pc = -1;
     }
     return 1;
   }
@@ -571,17 +571,18 @@ int gimli_is_signal_frame(struct gimli_unwind_cursor *cur)
 #elif defined(__i386)
   if (((intptr_t)cur->st.fp + sizeof(struct frame) +
       (3 * sizeof(greg_t)) == cur->st.lwpst.pr_oldcontext) ||
-      (cur->st.pc == (void*)-1 && cur->st.lwpst.pr_oldcontext != 0)) {
+      (cur->st.pc == -1 && cur->st.lwpst.pr_oldcontext != 0)) {
     struct {
       int signo;
       siginfo_t *siptr;
       ucontext_t *ucptr;
     } frame;
 
-    gimli_read_mem(cur->proc, (char*)cur->st.lwpst.pr_oldcontext - sizeof(frame),
-      &frame, sizeof(frame));
+    gimli_read_mem(cur->proc,
+        (intptr_t)cur->st.lwpst.pr_oldcontext - sizeof(frame),
+        &frame, sizeof(frame));
 
-    if (!frame.siptr || gimli_read_mem(cur->proc, frame.siptr,
+    if (!frame.siptr || gimli_read_mem(cur->proc, (intptr_t)frame.siptr,
           &cur->si, sizeof(cur->si)) != sizeof(cur->si)) {
       memset(&cur->si, 0, sizeof(cur->si));
       cur->si.si_signo = frame.signo;
@@ -596,7 +597,7 @@ int gimli_is_signal_frame(struct gimli_unwind_cursor *cur)
     return 1;
   }
 #endif
-  if (cur->st.pc == (void*)-1) {
+  if (cur->st.pc == -1) {
     return 1;
   }
   return 0;

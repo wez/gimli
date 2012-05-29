@@ -99,8 +99,8 @@ const char *gimli_data_sym_name(gimli_proc_t proc, gimli_addr_t addr, char *buf,
       if (addr == s->addr) {
         snprintf(buf, buflen-1, "%s`%s", m->objfile->objname, s->name);
       } else {
-        snprintf(buf, buflen-1, "%s`%s+%lx",
-            m->objfile->objname, s->name, (uintmax_t)(addr - s->addr));
+        snprintf(buf, buflen-1, "%s`%s+%" PRIx64,
+            m->objfile->objname, s->name, (uint64_t)(addr - s->addr));
       }
     } else {
       /* just identify the containing module; the caller will typically
@@ -124,8 +124,8 @@ const char *gimli_pc_sym_name(gimli_proc_t proc, gimli_addr_t addr, char *buf, i
       if (addr == s->addr) {
         snprintf(buf, buflen-1, "%s`%s", m->objfile->objname, s->name);
       } else {
-        snprintf(buf, buflen-1, "%s`%s+%lx",
-            m->objfile->objname, s->name, (uintmax_t)(addr - s->addr));
+        snprintf(buf, buflen-1, "%s`%s+%" PRIx64,
+            m->objfile->objname, s->name, (uint64_t)(addr - s->addr));
       }
     } else {
       snprintf(buf, buflen-1, "%s`" PTRFMT, m->objfile->objname, addr);

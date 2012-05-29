@@ -88,7 +88,7 @@ int dw_read_encptr(gimli_proc_t proc,
       break;
     case DW_EH_PE_datarel:
     default:
-      fprintf(stderr, "DWARF: unhandled pointer application value: %02x at %p\n", enc & DW_EH_PE_APPL_MASK, (void*)pc);
+      fprintf(stderr, "DWARF: unhandled pointer application value: %02x at " PTRFMT "\n", enc & DW_EH_PE_APPL_MASK, pc);
       return 0;
   }
 
@@ -156,7 +156,7 @@ int dw_read_encptr(gimli_proc_t proc,
       }
       break;
     default:
-      fprintf(stderr, "DWARF: unhandled DW_EH_PE value: 0x%02x (masked to 0x%02x) at %p\n", enc, enc & 0x0f, (void*)pc);
+      fprintf(stderr, "DWARF: unhandled DW_EH_PE value: 0x%02x (masked to 0x%02x) at " PTRFMT "\n", enc, enc & 0x0f, pc);
       return 0;
   }
 
@@ -239,7 +239,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
 {
   struct gimli_section_data *s = NULL;
   struct {
-    char *address;
+    gimli_addr_t address;
     uint64_t file;
     uint64_t line;
     uint64_t column;
@@ -290,12 +290,12 @@ static int process_line_numbers(gimli_mapped_object_t f)
 
   while (data < end) {
     const uint8_t *cuend;
-    void *prior;
+    gimli_addr_t prior;
 
     memset(&regs, 0, sizeof(regs));
     regs.file = 1;
     regs.line = 1;
-    prior = NULL;
+    prior = 0;
 
     /* read the initial length, this tells us which dwarf version and format
      * we're dealing with */
@@ -393,7 +393,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
               void *addr;
               memcpy(&addr, data, sizeof(addr));
               if (debugline) fprintf(stderr, "set_address %p\n", addr);
-              regs.address = addr;
+              regs.address = (intptr_t)addr;
               break;
             }
           case DW_LNE_end_sequence:
@@ -448,7 +448,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
               uint64_t u = dw_read_uleb128(&data, cuend);
               regs.address += u * hdr_1.min_insn_len;
               if (debugline) {
-                fprintf(stderr, "advance_pc: addr=0x%" PRIx64 "\n", (uintptr_t)regs.address);
+                fprintf(stderr, "advance_pc: addr=" PTRFMT "\n", regs.address);
               }
               break;
             }
@@ -478,7 +478,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
             regs.address += ((255 - hdr_1.opcode_base) /
                             hdr_1.line_range) * hdr_1.min_insn_len;
             if (debugline) {
-              fprintf(stderr, "const_add_pc: addr=0x%" PRIx64 "\n", (uintptr_t)regs.address);
+              fprintf(stderr, "const_add_pc: addr=" PTRFMT "\n", regs.address);
             }
             break;
           case DW_LNS_fixed_advance_pc:
@@ -488,7 +488,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
             data += sizeof(u);
             regs.address += u;
             if (debugline) {
-              fprintf(stderr, "fixed_advance_pc: 0x%" PRIx64 "\n", (uintptr_t)regs.address);
+              fprintf(stderr, "fixed_advance_pc: " PTRFMT "\n", regs.address);
             }
             break;
           }
@@ -522,7 +522,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
         op -= hdr_1.opcode_base;
 
         if (debugline) {
-          fprintf(stderr, "special before: addr = %p, line = %" PRId64 "\n",
+          fprintf(stderr, "special before: addr = " PTRFMT ", line = %" PRId64 "\n",
               regs.address, regs.line);
           fprintf(stderr, "line_base = %d, line_range = %d\n",
             hdr_1.line_base, hdr_1.line_range);
@@ -531,7 +531,7 @@ static int process_line_numbers(gimli_mapped_object_t f)
         regs.address += (op / hdr_1.line_range) * hdr_1.min_insn_len;
         regs.line += hdr_1.line_base + (op % hdr_1.line_range);
         if (debugline) {
-          fprintf(stderr, "special: addr = %p, line = %" PRId64 "\n",
+          fprintf(stderr, "special: addr = " PTRFMT ", line = %" PRId64 "\n",
             regs.address, regs.line);
         }
       }
@@ -647,7 +647,7 @@ int dw_calc_location(struct gimli_unwind_cursor *cur,
 //    printf("This section is %d bytes in length\n", len);
 
 //    printf("%p - %p\n", rstart, rend);
-    if (cur->st.pc >= rstart && cur->st.pc < rend) {
+    if (cur->st.pc >= (intptr_t)rstart && cur->st.pc < (intptr_t)rend) {
 //      printf("Found the range I was looking for, data=%p, len=%d\n", data, len);
 
       return dw_eval_expr(cur, (uint8_t*)data, len, 0, res, NULL, is_stack);

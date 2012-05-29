@@ -287,7 +287,7 @@ char *gimli_read_string(gimli_proc_t proc, gimli_addr_t addr)
   /* try to efficiently find a string in the target */
   if (proc->pid == 0) {
     /* easy case is when it's local */
-    return strdup((char*)addr);
+    return strdup((char*)(intptr_t)addr);
   }
 
   /* map in a block at a time and look for the terminator */
