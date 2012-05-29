@@ -17,7 +17,7 @@ static int v2_get_source_info(void *addr, char *buf,
 {
   uint64_t l;
   int ret = gimli_determine_source_line_number(the_proc,
-      (gimli_addr_t)addr, buf, buflen, &l);
+      (gimli_addr_t)(intptr_t)addr, buf, buflen, &l);
   if (ret) {
     *lineno = (int)l;
   }
@@ -44,17 +44,17 @@ static struct gimli_symbol *v1_sym_lookup(
 static const char *v1_pc_sym_name(void *addr,
     char *buf, int buflen)
 {
-  return gimli_pc_sym_name(the_proc, (gimli_addr_t)addr, buf, buflen);
+  return gimli_pc_sym_name(the_proc, (gimli_addr_t)(intptr_t)addr, buf, buflen);
 }
 
 static int v1_read_mem(void *src, void *dest, int len)
 {
-  return gimli_read_mem(the_proc, (gimli_addr_t)src, dest, len);
+  return gimli_read_mem(the_proc, (gimli_addr_t)(intptr_t)src, dest, len);
 }
 
 static char *v1_read_string(void *src)
 {
-  return gimli_read_string(the_proc, (gimli_addr_t)src);
+  return gimli_read_string(the_proc, (gimli_addr_t)(intptr_t)src);
 }
 
 static int v2_get_parameter(void *context, const char *varname,
@@ -69,7 +69,7 @@ static int v2_get_parameter(void *context, const char *varname,
     return 0;
   }
 
-  *addrp = (void*)addr;
+  *addrp = (void*)(intptr_t)addr;
   *sizep = gimli_type_size(t);
   *datatypep = gimli_type_declname(t);
 

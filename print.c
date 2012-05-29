@@ -410,11 +410,11 @@ static void print_pointer(struct print_data *data, gimli_type_t t)
 
   if (gimli_read_mem(data->proc, addr, &tptr,
         sizeof(tptr)) != sizeof(tptr)) {
-    printf("<unable to read %lu bytes at " PTRFMT ">",
-        sizeof(ptr), data->addr);
+    printf("<unable to read %" PRIu32 " bytes at " PTRFMT ">",
+        (uint32_t)sizeof(ptr), data->addr);
     return;
   }
-  ptr = (gimli_addr_t)tptr;
+  ptr = (gimli_addr_t)(intptr_t)tptr;
 
   if (ptr == 0) {
     printf("nil");
@@ -505,11 +505,12 @@ static gimli_iter_status_t after_print_var(
 
     mod->ptr.v2->after_print_frame_var(&ana_api,
           mod->exename, data->frame->cur.tid,
-          data->frame->cur.frameno, data->frame->cur.st.pc,
+          data->frame->cur.frameno,
+          (void*)(intptr_t)data->frame->cur.st.pc,
           data->frame,
           typename,
           data->var->varname,
-          (void*)data->var->addr,
+          (void*)(intptr_t)data->var->addr,
           size);
   }
   return GIMLI_ITER_CONT;

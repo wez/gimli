@@ -115,15 +115,14 @@ struct gimli_thread_state {
 
   gimli_proc_t proc;
 
-  void *pc; /* pc in frame 0 */
-  void *fp; /* frame pointer */
-  void *sp; /* stack pointer */
+  gimli_addr_t pc; /* pc in frame 0 */
+  gimli_addr_t fp; /* frame pointer */
+  gimli_addr_t sp; /* stack pointer */
   int lwpid;
 
   int valid;
 #if defined(__linux__)
   struct user_regs_struct regs;
-  //prgregset_t regs;
 #elif defined(sun)
   prgregset_t regs;
   lwpstatus_t lwpst;
@@ -213,8 +212,8 @@ struct gimli_section_data *gimli_get_section_by_name(
 struct gimli_object_mapping {
   gimli_proc_t proc;
   gimli_addr_t base;
-  unsigned long len;
-  unsigned long offset;
+  uint64_t len;
+  uint64_t offset;
   gimli_mapped_object_t objfile;
 };
 
@@ -415,13 +414,8 @@ gimli_mapped_object_t gimli_find_object(
   gimli_proc_t proc,
   const char *objname);
 
-#if SIZEOF_VOIDP == 8
-# define PTRFMT "0x%" PRIx64
-# define PTRFMT_T uint64_t
-#else
-# define PTRFMT "0x%" PRIx32
-# define PTRFMT_T uint32_t
-#endif
+#define PTRFMT "0x%" PRIx64
+#define PTRFMT_T uint64_t
 
 int gimli_process_elf(gimli_mapped_object_t f);
 int gimli_process_dwarf(gimli_mapped_object_t f);
@@ -430,6 +424,35 @@ int gimli_dwarf_unwind_next(struct gimli_unwind_cursor *cur);
 int gimli_dwarf_regs_to_thread(struct gimli_unwind_cursor *cur);
 int gimli_thread_regs_to_dwarf(struct gimli_unwind_cursor *cur);
 void *gimli_reg_addr(struct gimli_unwind_cursor *cur, int col);
+
+static inline int gimli_reg_get(struct gimli_unwind_cursor *cur,
+    int col, gimli_addr_t *val)
+{
+  void **ptr = gimli_reg_addr(cur, col);
+  gimli_addr_t v;
+
+  if (!ptr) {
+    printf("Couldn't find address for register %d\n", col);
+    return 0;
+  }
+  v = (intptr_t)*ptr;
+  if (sizeof(void *) == 4) {
+    v &= 0xffffffff;
+  }
+  *val = v;
+  return 1;
+}
+
+static inline void gimli_reg_set(struct gimli_unwind_cursor *cur,
+    int col, gimli_addr_t val)
+{
+  void **ptr = gimli_reg_addr(cur, col);
+  if (!ptr) {
+    printf("Couldn't find address for register %d\n", col);
+    return;
+  }
+  *ptr = (void*)(intptr_t)val;
+}
 
 char **gimli_init_proctitle(int argc, char **argv);
 void gimli_set_proctitle(const char *fmt, ...);

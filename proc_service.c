@@ -47,29 +47,29 @@ void gimli_user_regs_to_thread(prgregset_t *ur,
   memcpy(&thr->regs, ur, sizeof(*ur));
 
 #ifdef sun
-  thr->fp = (void*)thr->regs[R_FP];
-  thr->pc = (void*)thr->regs[R_PC];
-  thr->sp = (void*)thr->regs[R_SP];
+  thr->fp = thr->regs[R_FP];
+  thr->pc = thr->regs[R_PC];
+  thr->sp = thr->regs[R_SP];
 #elif defined(__linux__)
 # ifdef __x86_64__
-  thr->pc = (void*)thr->regs.rip;
-  thr->sp = (void*)thr->regs.rsp;
-  thr->fp = (void*)thr->regs.rsp;
+  thr->pc = thr->regs.rip;
+  thr->sp = thr->regs.rsp;
+  thr->fp = thr->regs.rsp;
 # else
-  thr->pc = (void*)thr->regs.eip;
-  thr->sp = (void*)thr->regs.esp;
-  thr->fp = (void*)thr->regs.ebp;
+  thr->pc = thr->regs.eip;
+  thr->sp = thr->regs.esp;
+  thr->fp = thr->regs.ebp;
 # endif
 #elif defined(__FreeBSD__)
 #ifdef __x86_64__
-  thr->pc = (void*)thr->regs.r_rip;
-  thr->sp = (void*)thr->regs.r_rsp;
-  thr->fp = (void*)thr->regs.r_rbp;
+  thr->pc = thr->regs.r_rip;
+  thr->sp = thr->regs.r_rsp;
+  thr->fp = thr->regs.r_rbp;
 #else
 # error consult machine/reg.h; probably just want ur->r_eip etc.
-  thr->pc = (void*)thr->regs.eip;
-  thr->sp = (void*)thr->regs.esp;
-  thr->fp = (void*)thr->regs.ebp;
+  thr->pc = thr->regs.eip;
+  thr->sp = thr->regs.esp;
+  thr->fp = thr->regs.ebp;
 #endif
 #endif
 }
@@ -212,8 +212,8 @@ static int collect_map(const rd_loadobj_t *obj, void *pp)
   gimli_proc_t proc = pp;
   char *name;
 
-  name = gimli_read_string(proc, (void*)obj->rl_nameaddr);
-  gimli_add_mapping(proc, name, (void*)obj->rl_base, obj->rl_bend - obj->rl_base, 0);
+  name = gimli_read_string(proc, (intptr_t)obj->rl_nameaddr);
+  gimli_add_mapping(proc, name, (intptr_t)obj->rl_base, obj->rl_bend - obj->rl_base, 0);
   free(name);
 
   return 1;
@@ -233,6 +233,8 @@ gimli_err_t gimli_proc_service_init(gimli_proc_t proc)
 {
   int i, done = 0, tries = 20;
   td_err_e te;
+  int nthreads;
+  struct gimli_thread_state *thr;
 
 #ifdef sun
   read_rtld_maps(proc);
@@ -249,9 +251,6 @@ gimli_err_t gimli_proc_service_init(gimli_proc_t proc)
     return GIMLI_ERR_THREAD_DEBUGGER_INIT_FAILED;
   }
   if (proc->ta) {
-    int nthreads;
-    struct gimli_thread_state *thr;
-
     /* we're going to make two passes over the set of threads; the first pass
      * is to assess the threads and request that they stop.
      *
@@ -284,29 +283,41 @@ gimli_err_t gimli_proc_service_init(gimli_proc_t proc)
 
       sleep(1);
     } while (tries--);
-
-  } else {
-    gimli_proc_thread_by_lwpid(proc, proc->pid, 1);
+  }
+  if (nthreads == 0) {
+    thr = gimli_proc_thread_by_lwpid(proc, proc->pid, 1);
+    thr->valid = 1;
+#ifdef __linux__
+    {
+      prgregset_t ur;
+      gimli_ptrace(PTRACE_GETREGS, proc->pid, NULL, ur);
+      gimli_user_regs_to_thread(&ur, thr);
+    }
+#endif
   }
 
   return GIMLI_ERR_OK;
 }
 
+ps_err_e ps_lsetfpregs(struct ps_prochandle *ph, lwpid_t lwpid, const prfpregset_t *fpregset);
 ps_err_e ps_lsetfpregs(struct ps_prochandle *ph, lwpid_t lwpid, const prfpregset_t *fpregset)
 {
   return PS_ERR;
 }
 
+ps_err_e ps_lsetregs(struct ps_prochandle *ph, lwpid_t lwpid, const prgregset_t gregset);
 ps_err_e ps_lsetregs(struct ps_prochandle *ph, lwpid_t lwpid, const prgregset_t gregset)
 {
   return PS_ERR;
 }
 
+ps_err_e ps_lgetfpregs(struct ps_prochandle *ph, lwpid_t lwpid, prfpregset_t *fpregset);
 ps_err_e ps_lgetfpregs(struct ps_prochandle *ph, lwpid_t lwpid, prfpregset_t *fpregset)
 {
   return PS_ERR;
 }
 
+pid_t ps_getpid(struct ps_prochandle *ph);
 pid_t ps_getpid(struct ps_prochandle *ph)
 {
   return ph->pid;
@@ -314,11 +325,13 @@ pid_t ps_getpid(struct ps_prochandle *ph)
 
 #ifndef sun
 ps_err_e ps_pglobal_lookup(struct ps_prochandle *ph, const char *obj,
+  const char *name, psaddr_t *symaddr);
+ps_err_e ps_pglobal_lookup(struct ps_prochandle *ph, const char *obj,
   const char *name, psaddr_t *symaddr)
 {
   struct gimli_symbol *sym = gimli_sym_lookup(ph, obj, name);
   if (sym) {
-    *symaddr = (psaddr_t)sym->addr;
+    *symaddr = (psaddr_t)(intptr_t)sym->addr;
     return PS_OK;
   }
   return PS_NOSYM;
@@ -336,48 +349,71 @@ ps_err_e ps_pglobal_sym(struct ps_prochandle *h,
 #ifndef __FreeBSD__
 int gimli_write_mem(gimli_proc_t proc, gimli_addr_t ptr, const void *buf, int len)
 {
-  int ret = pwrite(proc->proc_mem, buf, len, ptr);
+  off64_t addr;
+  int ret;
+
+  if (sizeof(void*) == 4) {
+    ptr &= 0xffffffff;
+  }
+  addr = ptr;
+  ret = pwrite64(proc->proc_mem, buf, len, addr);
   if (ret < 0) ret = 0;
   return ret;
 }
 
 int gimli_read_mem(gimli_proc_t proc, gimli_addr_t src, void *dest, int len)
 {
-  int ret = pread(proc->proc_mem, dest, len, src);
+  off64_t addr;
+  int ret;
+
+  if (sizeof(void*) == 4) {
+    src &= 0xffffffff;
+  }
+  addr = src;
+  ret = pread64(proc->proc_mem, dest, len, addr);
   if (ret < 0) ret = 0;
   return ret;
 }
 #endif
 
 ps_err_e ps_pread(struct ps_prochandle *h,
+			psaddr_t addr, void *buf, size_t size);
+ps_err_e ps_pread(struct ps_prochandle *h,
 			psaddr_t addr, void *buf, size_t size)
 {
-  return gimli_read_mem(h, (gimli_addr_t)addr, buf, size)
+  return gimli_read_mem(h, (intptr_t)addr, buf, size)
     == size ? PS_OK : PS_BADADDR;
 }
 
 ps_err_e ps_pdread(struct ps_prochandle *h, psaddr_t addr,
+  void *buf, size_t size);
+ps_err_e ps_pdread(struct ps_prochandle *h, psaddr_t addr,
   void *buf, size_t size)
 {
-  return gimli_read_mem(h, (gimli_addr_t)addr, buf, size)
+  return gimli_read_mem(h, (intptr_t)addr, buf, size)
     == size ? PS_OK : PS_BADADDR;
 }
 
 ps_err_e ps_pwrite(struct ps_prochandle *h,
+			psaddr_t addr, const void *buf, size_t size);
+ps_err_e ps_pwrite(struct ps_prochandle *h,
 			psaddr_t addr, const void *buf, size_t size)
 {
-  return gimli_write_mem(h, (gimli_addr_t)addr, buf, size)
+  return gimli_write_mem(h, (gimli_addr_t)(intptr_t)addr, buf, size)
     == size ? PS_OK : PS_BADADDR;
 }
 
 ps_err_e ps_pdwrite(struct ps_prochandle *h, psaddr_t addr,
+  const void *buf, size_t size);
+ps_err_e ps_pdwrite(struct ps_prochandle *h, psaddr_t addr,
   const void *buf, size_t size)
 {
-  return gimli_write_mem(h, (gimli_addr_t)addr, buf, size)
+  return gimli_write_mem(h, (gimli_addr_t)(intptr_t)addr, buf, size)
     == size ? PS_OK : PS_BADADDR;
 }
 
 #ifdef __linux__
+ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t lwpid, prgregset_t gregset);
 ps_err_e ps_lgetregs(struct ps_prochandle *ph, lwpid_t lwpid, prgregset_t gregset)
 {
   if (0 == gimli_ptrace(PTRACE_GETREGS, lwpid, NULL, gregset)) {
@@ -439,6 +475,7 @@ ps_err_e ps_pdmodel(struct ps_prochandle *h, int *data_model)
 }
 #endif
 
+void ps_plog(const char *fmt, ...);
 void ps_plog(const char *fmt, ...)
 {
   va_list ap;

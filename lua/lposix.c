@@ -10,6 +10,9 @@
 * Based on original by Claudio Terra for Lua 3.x.
 * With contributions by Roberto Ierusalimschy.
 */
+#ifndef _GNU_SOURCE
+# define _GNU_SOURCE
+#endif
 #include <sys/stat.h>
 #include <sys/times.h>
 #include <sys/types.h>

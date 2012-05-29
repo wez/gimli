@@ -280,12 +280,13 @@ int gimli_render_siginfo(gimli_proc_t proc, siginfo_t *si, char *buf, size_t buf
   if (use_fault_addr) {
     const char *name;
 
-    name = gimli_pc_sym_name(proc, (gimli_addr_t)si->si_addr,
+    name = gimli_pc_sym_name(proc, (intptr_t)si->si_addr,
         namebuf, sizeof(namebuf));
     if (name && strlen(name)) {
       snprintf(addrbuf, sizeof(addrbuf), " (%s)", name);
     } else {
-      snprintf(addrbuf, sizeof(addrbuf), " (" PTRFMT ")", (intptr_t)si->si_addr);
+      snprintf(addrbuf, sizeof(addrbuf), " (" PTRFMT ")",
+          (gimli_addr_t)(intptr_t)si->si_addr);
     }
   }
 

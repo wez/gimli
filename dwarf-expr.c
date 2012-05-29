@@ -79,17 +79,6 @@ static int deref(gimli_proc_t proc, uint64_t ptr, uint64_t *resp, uint8_t opsize
   return 1;
 }
 
-static int get_reg(struct gimli_unwind_cursor *cur, int regno, uint64_t *val)
-{
-  void **addr = gimli_reg_addr(cur, regno);
-  if (!addr) {
-    fprintf(stderr, "DWARF: expr: no address for reg %d\n", regno);
-    return 0;
-  }
-  *val = (uint64_t)(intptr_t)*addr;
-  return 1;
-}
-
 int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
   uint64_t oplen,
   uint64_t frame_base, uint64_t *result, uint64_t *prepopulate,
@@ -141,7 +130,7 @@ int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
       s64 = dw_read_leb128(&e.ops, e.end);
       val.is_signed = 0;
       val.is_stack = 1;
-      if (!get_reg(cur, op - DW_OP_breg0, &val.v.u64)) return 0;
+      if (!gimli_reg_get(cur, op - DW_OP_breg0, &val.v.u64)) return 0;
       if (debug) printf("OP_breg%d val=%" PRIx64 "\n", op - DW_OP_breg0, val.v.u64);
       val.v.u64 += s64;
       if (!push(&e, &val)) return 0;
@@ -150,7 +139,7 @@ int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
     if (op >= DW_OP_reg0 && op <= DW_OP_reg31) {
       val.is_signed = 0;
       val.is_stack = 0;
-      if (!get_reg(cur, op - DW_OP_reg0, &val.v.u64)) return 0;
+      if (!gimli_reg_get(cur, op - DW_OP_reg0, &val.v.u64)) return 0;
       if (debug) printf("OP_reg%d -> %" PRIx64 "\n", op - DW_OP_reg0, val.v.u64);
       if (!push(&e, &val)) return 0;
       continue;
@@ -272,7 +261,7 @@ int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
         s64 = dw_read_leb128(&e.ops, e.end);
         val.is_signed = 0;
         val.is_stack = 1;
-        if (!get_reg(cur, u64, &val.v.u64)) return 0;
+        if (!gimli_reg_get(cur, u64, &val.v.u64)) return 0;
         val.v.u64 += s64;
         if (debug) printf("OP_breg%" PRId64 ": %" PRIx64 "\n", u64, val.v.u64);
         if (!push(&e, &val)) return 0;
@@ -282,7 +271,7 @@ int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
         u64 = dw_read_uleb128(&e.ops, e.end);
         val.is_signed = 0;
         val.is_stack = 0;
-        if (!get_reg(cur, u64, &val.v.u64)) return 0;
+        if (!gimli_reg_get(cur, u64, &val.v.u64)) return 0;
         if (debug) printf("OP_reg%" PRId64 "\n", u64);
         if (!push(&e, &val)) return 0;
         continue;
