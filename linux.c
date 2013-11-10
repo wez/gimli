@@ -436,7 +436,7 @@ printf("fp=" PTRFMT " sp=" PTRFMT " pc=" PTRFMT "\n", c.st.fp, c.st.sp, c.st.pc)
   return 0;
 }
 
-static child_stopped = 0;
+static int child_stopped = 0;
 
 static void child_handler(int signo)
 {

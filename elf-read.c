@@ -176,7 +176,7 @@ struct gimli_section_data *gimli_get_section_by_name(
   shdr = gimli_get_elf_section_by_name(elf, name);
   if (!shdr) return NULL;
   data = calloc(1, sizeof(*data));
-  data->data = (char*)gimli_get_section_data(elf, shdr->section_no);
+  data->data = (uint8_t*)gimli_get_section_data(elf, shdr->section_no);
   data->size = shdr->sh_size;
   data->offset = shdr->sh_offset;
   data->addr = shdr->sh_addr;
@@ -396,7 +396,7 @@ closeout:
       }
     }
   }
-//  printf("e_shstrndx is %d\n", elf->e_shstrndx); 
+//  printf("e_shstrndx is %d\n", elf->e_shstrndx);
   /* now make a pass through the sections to find out their names */
   STAILQ_FOREACH(s, &elf->sections, shdrs) {
     s->name = (char*)gimli_elf_get_string(elf, elf->e_shstrndx, s->sh_name);

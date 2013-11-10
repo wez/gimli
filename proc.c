@@ -240,9 +240,16 @@ void gimli_mem_ref_delete(gimli_mem_ref_t mem)
   }
 
   switch (mem->map_type) {
+    case gimli_mem_ref_is_relative:
+      break;
     case gimli_mem_ref_is_malloc:
       free(mem->base);
       mem->base = NULL;
+      break;
+    case gimli_mem_ref_is_mmap:
+      munmap(mem->base, mem->size);
+      mem->base = NULL;
+      break;
   }
 
   free(mem);
