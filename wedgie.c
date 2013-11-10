@@ -11,7 +11,8 @@
 #include <signal.h>
 #include <sys/ucontext.h>
 #include <sys/time.h>
-  
+#include <unistd.h>
+
 volatile struct gimli_heartbeat *hb;
 
 typedef int wedgie_t;

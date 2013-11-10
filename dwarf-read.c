@@ -1888,7 +1888,8 @@ static gimli_type_t populate_func(gimli_mapped_object_t file,
       type = gimli_dwarf_die_get_attr(kid, DW_AT_type);
       if (type) {
         ptype = load_type(file, type);
-        gimli_type_function_add_parameter(t, pname ? pname->ptr : NULL, ptype);
+        gimli_type_function_add_parameter(t,
+            pname ? (char*)pname->ptr : NULL, ptype);
       }
       continue;
     }
@@ -2251,7 +2252,7 @@ static void load_var(
   }
 
   var = calloc(1, sizeof(*var));
-  var->varname = name ? name->ptr : NULL;
+  var->varname = name ? (char*)name->ptr : NULL;
   var->addr = res;
   var->proc = frame->cur.proc;
   var->type = load_type(m->objfile, type);
