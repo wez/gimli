@@ -58,7 +58,7 @@ case $host in
 esac
 AC_DEFINE_UNQUOTED([MODULE_SUFFIX], "$MODULE_SUFFIX", [platform module suffix])
 
-CFLAGS="$CFLAGS $DWARF_DEBUG_FLAGS -DGIMLI_GLIDER_PATH=\\\"\$(bindir)/glider\\\""
+CFLAGS="$CFLAGS $DWARF_DEBUG_FLAGS -DGIMLI_GLIDER_PATH=\"\\\"\$(bindir)/glider\\\"\""
 LDFLAGS="$LDFLAGS $DWARF_DEBUG_FLAGS"
 AC_SUBST(CORONER_LDFLAGS)
 AC_SUBST(DARWIN_DSYMUTIL)
@@ -69,6 +69,29 @@ AC_CHECK_LIB(m, floor)
 AC_CHECK_LIB(crypt, crypt)
 AC_CHECK_FUNCS(clock_gettime)
 
+AC_ARG_WITH(libunwind,
+[  --with-libunwind    Use libunwind instead of the built-in dwarf unwinder],
+[
+  dnl Can't use CHECK_LIB because the header files do symbol munging
+  AC_MSG_CHECKING([for libunwind])
+  libs="$LIBS"
+  LIBS="$LIBS -lunwind-ptrace -lunwind-generic"
+  AC_TRY_LINK([
+  #include <libunwind.h>
+  #include <libunwind-ptrace.h>
+  ],[
+  unw_accessors_t accessors;
+  accessors.find_proc_info = _UPT_find_proc_info;
+  unw_create_addr_space(0,0);
+  ],[
+    AC_DEFINE(HAVE_LIBUNWIND, 1, [Have libunwind])
+    AC_MSG_RESULT([yes])
+    CORONER_LDFLAGS="$CORONER_LDFLAGS -lunwind-ptrace -lunwind-generic"
+  ],[
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$libs"
+])
 AC_CHECK_SIZEOF(void*)
 
 AC_DEFINE(LUA_USE_POSIX, 1, [Use POSIX functions])

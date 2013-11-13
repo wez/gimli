@@ -121,6 +121,9 @@ int gimli_init_unwind(struct gimli_unwind_cursor *cur,
   struct gimli_thread_state *st)
 {
   memcpy(&cur->st, st, sizeof(*st));
+#ifdef HAVE_LIBUNWIND
+  gimli_unw_unwind_init(cur);
+#endif
   return 1;
 }
 
@@ -274,6 +277,9 @@ int gimli_is_signal_frame(struct gimli_unwind_cursor *cur)
 
 int gimli_unwind_next(struct gimli_unwind_cursor *cur)
 {
+#ifdef HAVE_LIBUNWIND
+  return gimli_unw_unwind_next(cur);
+#else
   /* generic x86 backtrace */
   struct x86_frame {
     struct x86_frame *next;
@@ -434,6 +440,7 @@ printf("fp=" PTRFMT " sp=" PTRFMT " pc=" PTRFMT "\n", c.st.fp, c.st.sp, c.st.pc)
   }
 
   return 0;
+#endif
 }
 
 static int child_stopped = 0;

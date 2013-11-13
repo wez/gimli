@@ -22,6 +22,7 @@ gimli_stack_trace_t gimli_thread_stack_trace(gimli_thread_t thr, int max_frames)
     { "main", 0 },
 #ifdef __linux__
     { "start_thread", 1 },
+    { "__libc_start_main", 1 },
 #endif
 #ifdef sun
     { "_thr_setup", 1 },

@@ -175,7 +175,7 @@ static int resume_threads(const td_thrhandle_t *thr, void *pp)
     return 0;
   }
 
-  if (info.ti_lid != proc->pid && 
+  if (info.ti_lid != proc->pid &&
       gimli_ptrace(PTRACE_DETACH, info.ti_lid, NULL, (void*)SIGCONT)) {
     fprintf(stderr, "resume_threads: failed to detach from thread %d %s\n",
         info.ti_lid, strerror(errno));
@@ -233,7 +233,7 @@ gimli_err_t gimli_proc_service_init(gimli_proc_t proc)
 {
   int i, done = 0, tries = 20;
   td_err_e te;
-  int nthreads;
+  int nthreads = 0;
   struct gimli_thread_state *thr;
 
 #ifdef sun
@@ -262,7 +262,6 @@ gimli_err_t gimli_proc_service_init(gimli_proc_t proc)
     td_ta_thr_iter(proc->ta, enum_threads1, proc, TD_THR_ANY_STATE,
       TD_THR_LOWEST_PRIORITY, TD_SIGNO_MASK, TD_THR_ANY_USER_FLAGS);
 
-    nthreads = 0;
     STAILQ_FOREACH(thr, &proc->threads, threadlist) {
       nthreads++;
     }
