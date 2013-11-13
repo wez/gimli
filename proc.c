@@ -78,6 +78,10 @@ static void populate_proc_stat(gimli_proc_t proc)
   }
 #endif
   proc->proc_stat.pid = proc->pid;
+
+#ifdef HAVE_LIBUNWIND
+  gimli_unw_proc_init(proc);
+#endif
 }
 
 
@@ -274,6 +278,7 @@ struct gimli_thread_state *gimli_proc_thread_by_lwpid(gimli_proc_t proc, int lwp
   if (create) {
     thr = calloc(1, sizeof(*thr));
     thr->lwpid = lwpid;
+    thr->proc = proc;
 
     STAILQ_INSERT_TAIL(&proc->threads, thr, threadlist);
     return thr;

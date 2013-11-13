@@ -88,6 +88,10 @@ typedef struct gimli_mapped_object *gimli_mapped_object_t;
 #endif
 #include "libgimli.h"
 #include "libgimli_ana.h"
+#ifdef HAVE_LIBUNWIND
+# include <libunwind.h>
+# include <libunwind-ptrace.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -140,6 +144,9 @@ struct gimli_unwind_cursor {
   gimli_proc_t proc;
   struct gimli_thread_state st;
   struct gimli_dwarf_unwind_state dw;
+#ifdef HAVE_LIBUNWIND
+  unw_cursor_t unw_cursor;
+#endif
   /* if a signal frame, the signal that triggered it */
   siginfo_t si;
   int frameno;
@@ -322,6 +329,10 @@ struct gimli_proc {
    * for /proc/pid/mem. */
   int proc_mem;
 #endif
+#if HAVE_LIBUNWIND
+  unw_addr_space_t unw_addrspace;
+  void *unw_upt;
+#endif
 
   /** list of threads */
   STAILQ_HEAD(threadlist, gimli_thread_state) threads;
@@ -425,6 +436,12 @@ int gimli_dwarf_unwind_next(struct gimli_unwind_cursor *cur);
 int gimli_dwarf_regs_to_thread(struct gimli_unwind_cursor *cur);
 int gimli_thread_regs_to_dwarf(struct gimli_unwind_cursor *cur);
 void *gimli_reg_addr(struct gimli_unwind_cursor *cur, int col);
+
+#ifdef HAVE_LIBUNWIND
+int gimli_unw_proc_init(gimli_proc_t proc);
+int gimli_unw_unwind_next(struct gimli_unwind_cursor *cur);
+int gimli_unw_unwind_init(struct gimli_unwind_cursor *cur);
+#endif
 
 static inline int gimli_reg_get(struct gimli_unwind_cursor *cur,
     int col, gimli_addr_t *val)
