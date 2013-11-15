@@ -250,6 +250,44 @@ static gimli_iter_status_t search_for_basename(const char *k, int klen,
   return GIMLI_ITER_CONT;
 }
 
+/* This function always returns a buffer that needs to
+ * be released via free(3).  We use the native feature
+ * of the system libc if we know it is present, otherwise
+ * we need to malloc a buffer for ourselves.  This
+ * is made more fun because some systems have a dynamic
+ * buffer size obtained via sysconf().
+ */
+char *gimli_realpath(const char *filename)
+{
+#if defined(__GLIBC__) || defined(__APPLE__)
+  return realpath(filename, NULL);
+#else
+  char *buf = NULL;
+  char *retbuf;
+  int path_max = 0;
+
+#ifdef _SC_PATH_MAX
+  path_max = sysconf(path, _SC_PATH_MAX);
+#endif
+  if (path_max <= 0) {
+    path_max = PATH_MAX;
+  }
+  buf = malloc(path_max);
+  if (!buf) {
+    return NULL;
+  }
+
+  retbuf = realpath(filename, buf);
+
+  if (retbuf != buf) {
+    free(buf);
+    return NULL;
+  }
+
+  return retbuf;
+#endif
+}
+
 static gimli_iter_status_t search_for_symlink(const char *k, int klen,
     void *item, void *arg)
 {
@@ -257,18 +295,25 @@ static gimli_iter_status_t search_for_symlink(const char *k, int klen,
   struct find_sym *find = arg;
   char dir[1024];
   char buf[1024];
+  char *real;
   int len;
+  gimli_iter_status_t status = GIMLI_ITER_CONT;
 
   strcpy(dir, file->objname);
   snprintf(buf, sizeof(buf)-1, "%s/%s", dirname(dir), find->name);
-  if (realpath(buf, dir)) {
-    if (!strcmp(dir, file->objname)) {
-      find->file = file;
-      return GIMLI_ITER_STOP;
-    }
+  real = gimli_realpath(buf);
+  if (!real) {
+    return GIMLI_ITER_CONT;
   }
 
-  return GIMLI_ITER_CONT;
+  if (!strcmp(real, file->objname)) {
+    status = GIMLI_ITER_STOP;
+    find->file = file;
+  }
+
+  free(real);
+
+  return status;
 }
 
 struct gimli_symbol *gimli_sym_lookup(gimli_proc_t proc, const char *obj, const char *name)

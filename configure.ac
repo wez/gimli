@@ -75,7 +75,7 @@ AC_ARG_WITH(libunwind,
   dnl Can't use CHECK_LIB because the header files do symbol munging
   AC_MSG_CHECKING([for libunwind])
   libs="$LIBS"
-  LIBS="$LIBS -lunwind-ptrace -lunwind-generic"
+  LIBS="$LIBS -lunwind-ptrace -lunwind-generic -lunwind"
   AC_TRY_LINK([
   #include <libunwind.h>
   #include <libunwind-ptrace.h>
