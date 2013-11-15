@@ -41,6 +41,7 @@
 # define false 0
 #endif
 
+#ifndef HAVE_CXA_DEMANGLE
 typedef struct {
   const char *abbrev;
   const char *real_name;
@@ -1314,6 +1315,26 @@ int gimli_demangle(const char *mangled, char *out, int out_size)
   InitState(&state, mangled, out, out_size);
   return ParseTopLevelMangledName(&state) && !state.overflowed;
 }
+
+#else
+
+extern char* __cxa_demangle(const char* mangled_name,
+                            char*       output_buffer,
+                            size_t*     length,
+                            int*        status);
+
+int gimli_demangle(const char *mangled, char *out, int out_size)
+{
+  size_t size = out_size;
+  int status = 0;
+
+  if (__cxa_demangle(mangled, out, &size, &status)) {
+    return 1;
+  }
+  return 0;
+}
+
+#endif
 
 /* vim:ts=2:sw=2:et:
  */
