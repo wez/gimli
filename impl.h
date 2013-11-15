@@ -483,6 +483,8 @@ int process_args(int *argc, char **argv[]);
 
 int gimli_demangle(const char *mangled, char *out, int out_size);
 
+char *gimli_realpath(const char *filename);
+
 gimli_err_t gimli_attach(gimli_proc_t proc);
 gimli_err_t gimli_detach(gimli_proc_t proc);
 
