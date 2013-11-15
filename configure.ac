@@ -92,6 +92,31 @@ AC_ARG_WITH(libunwind,
   ])
   LIBS="$libs"
 ])
+
+AC_ARG_WITH(cxademangle,
+[  --with-cxademangle   Use C++ demangler from libstdc++],
+[
+  libs="$LIBS"
+  LIBS="-lstdc++"
+  AC_MSG_CHECKING([for __cxa_demangle])
+  AC_TRY_LINK([
+#include <sys/types.h>
+  ],[
+  extern char* __cxa_demangle(const char* mangled_name,
+                              char*       output_buffer,
+                              size_t*     length,
+                              int*        status);
+  __cxa_demangle(0, 0, 0, 0);
+  ],[
+    AC_MSG_RESULT([yes])
+    AC_DEFINE(HAVE_CXA_DEMANGLE, 1, [Have C++ demangler])
+    CORONER_LDFLAGS="$CORONER_LDFLAGS -lstdc++"
+  ],[
+    AC_MSG_RESULT([no])
+  ])
+  LIBS="$libs"
+])
+
 AC_CHECK_SIZEOF(void*)
 
 AC_ARG_ENABLE(wdb,
