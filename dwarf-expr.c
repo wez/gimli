@@ -554,7 +554,10 @@ int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
       case DW_OP_nop:
         continue;
 
+      case DW_OP_GNU_entry_value:
+      case DW_OP_implicit_value:
       case DW_OP_stack_value:
+      case DW_OP_piece:
         /* The DW_OP_stack_value operation specifies that the object does not
          * exist in memory but its value is nonetheless known and is at the top
          * of the DWARF expression stack. In this form of location description,
@@ -569,7 +572,6 @@ int dw_eval_expr(struct gimli_unwind_cursor *cur, const uint8_t *ops,
          */
         return 0;
 
-      case DW_OP_piece: /* similar reasoning to DW_OP_stack_value above */
       default:
         fprintf(stderr, "DWARF: expr: unhandled op 0x%02x\n", op);
         return 0;

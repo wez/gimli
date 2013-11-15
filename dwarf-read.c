@@ -796,6 +796,17 @@ static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
       data += sizeof(u64);
       *vptr = u64;
       break;
+    case DW_FORM_sec_offset:
+      if (is_64) {
+        memcpy(&u64, data, sizeof(u64));
+        data += sizeof(u64);
+        *vptr = u64;
+      } else {
+        memcpy(&u32, data, sizeof(u32));
+        data += sizeof(u32);
+        *vptr = u32;
+      }
+      break;
     case DW_FORM_udata:
     case DW_FORM_ref_udata:
       *vptr = dw_read_uleb128(&data, end);
@@ -809,6 +820,10 @@ static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
       data += sizeof(u8);
       *vptr = u8;
       break;
+    case DW_FORM_flag_present:
+      *vptr = 1;
+      break;
+
     /* for blocks, store length in vptr and set byteptr to start of data */
     case DW_FORM_block1:
       memcpy(&u8, data, sizeof(u8));
@@ -832,10 +847,12 @@ static uint64_t get_value(uint64_t form, uint64_t addr_size, int is_64,
       data += *vptr;
       break;
     case DW_FORM_block:
+    case DW_FORM_exprloc:
       *vptr = dw_read_uleb128(&data, end);
       *byteptr = data;
       data += *vptr;
       break;
+
     case DW_FORM_strp:
       if (is_64) {
         memcpy(vptr, data, sizeof(*vptr));
@@ -1151,7 +1168,7 @@ static struct gimli_dwarf_cu *load_cu(gimli_mapped_object_t f, uint64_t offset)
 
   memcpy(&ver, data, sizeof(ver));
   data += sizeof(ver);
-  if (ver < 2 || ver > 3) {
+  if (ver < 2 || ver > 4) {
     printf("%s: CU @ offset 0x%" PRIx64 " with dwarf version %d; ending processing\n",
         f->objname, offset, ver);
     abort();

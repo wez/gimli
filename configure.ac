@@ -86,7 +86,7 @@ AC_ARG_WITH(libunwind,
   ],[
     AC_DEFINE(HAVE_LIBUNWIND, 1, [Have libunwind])
     AC_MSG_RESULT([yes])
-    CORONER_LDFLAGS="$CORONER_LDFLAGS -lunwind-ptrace -lunwind-generic"
+    CORONER_LDFLAGS="$CORONER_LDFLAGS -lunwind-ptrace -lunwind-generic -lunwind -static-libtool-libs"
   ],[
     AC_MSG_RESULT([no])
   ])
