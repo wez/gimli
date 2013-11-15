@@ -1325,10 +1325,13 @@ extern char* __cxa_demangle(const char* mangled_name,
 
 int gimli_demangle(const char *mangled, char *out, int out_size)
 {
-  size_t size = out_size;
   int status = 0;
+  char *de;
 
-  if (__cxa_demangle(mangled, out, &size, &status)) {
+  de = __cxa_demangle(mangled, 0, 0, &status);
+  if (de) {
+    snprintf(out, out_size, "%s", de);
+    free(de);
     return 1;
   }
   return 0;
