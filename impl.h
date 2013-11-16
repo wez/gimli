@@ -126,6 +126,7 @@ struct gimli_thread_state {
   int lwpid;
 
   int valid;
+  char name[32];
 #if defined(__linux__)
   struct user_regs_struct regs;
 #elif defined(sun)

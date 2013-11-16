@@ -280,6 +280,26 @@ struct gimli_thread_state *gimli_proc_thread_by_lwpid(gimli_proc_t proc, int lwp
     thr->lwpid = lwpid;
     thr->proc = proc;
 
+#ifdef __linux__
+    {
+      int fd, ret;
+      char buffer[1024];
+
+      /* load the thread name */
+      snprintf(buffer, sizeof(buffer),
+          "/proc/%d/task/%d/comm", proc->pid, lwpid);
+      fd = open(buffer, O_RDONLY);
+      if (fd >= 0) {
+        ret = read(fd, thr->name, sizeof(thr->name));
+        while (ret > 0 && isspace(thr->name[ret-1])) {
+          ret--;
+        }
+        thr->name[ret] = '\0';
+        close(fd);
+      }
+    }
+#endif
+
     STAILQ_INSERT_TAIL(&proc->threads, thr, threadlist);
     return thr;
   }

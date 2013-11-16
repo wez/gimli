@@ -106,7 +106,8 @@ static void render_thread(gimli_proc_t proc,
 
   if (args->suppress) return;
 
-  printf("Thread %d (LWP %d)\n", args->nthread, thread->lwpid);
+  printf("Thread %d (LWP %d) %s\n", args->nthread,
+      thread->lwpid, thread->name);
   for (args->nframe = 0; args->nframe < num_frames; args->nframe++) {
     args->suppress = 0;
     gimli_visit_modules(should_suppress_frame, args);
