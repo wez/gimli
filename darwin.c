@@ -157,7 +157,7 @@ static void find_dwarf_dSYM(gimli_mapped_object_t file)
   gimli_segment_command scmd;
   char sectname[16];
   gimli_object_file_t container;
-  
+
   strcpy(basepath, file->objname);
   base = basename(basepath);
 
@@ -569,14 +569,19 @@ static void discover_maps(gimli_proc_t proc)
           if (pread(fd, &sec, sizeof(sec), sec_addr) != sizeof(sec)) {
             continue;
           }
-          if (!strcmp("__eh_frame", sec.sectname)) {
+          if (!strcmp("__eh_frame", sec.sectname) ||
+              !strcmp(GIMLI_TRACE_SECTION_NAME, sec.sectname)) {
+            s = calloc(1, sizeof(*s));
 
             // make the names look more like elven versions
-            s = calloc(1, sizeof(*s));
-            memcpy(sectname, sec.sectname + 1, 15);
-            sectname[15] = '\0';
-            s->name = strdup(sectname);
-            s->name[0] = '.';
+            if (sec.sectname[0] == '_') {
+              memcpy(sectname, sec.sectname + 1, 15);
+              sectname[15] = '\0';
+              s->name = strdup(sectname);
+              s->name[0] = '.';
+            } else {
+              s->name = strdup(sec.sectname);
+            }
             s->addr = sec.addr;
             s->size = sec.size;
             s->data = malloc(s->size);
@@ -650,7 +655,7 @@ gimli_err_t gimli_attach(gimli_proc_t proc)
   if (rc != KERN_SUCCESS) {
     /* this will usually fail unless you call this from the
      * parent of the faulting process, or have root */
-    fprintf(stderr, 
+    fprintf(stderr,
 "task_for_pid returned %d\n"
 "One resolution is to run the monitor or glider process with root privileges\n"
 "alternatively, if glider was codesigned at build time, you may use keychain\n"
@@ -724,7 +729,7 @@ int gimli_unwind_next(struct gimli_unwind_cursor *cur)
   if (0 && gimli_is_signal_frame(cur)) {
 #if defined(__x86_64__)
     _STRUCT_MCONTEXT64 mctx;
-    
+
     if (gimli_read_mem(cur->proc, (gimli_addr_t)cur->st.fp + GIMLI_KERNEL_MCTX64, &mctx,
         sizeof(mctx)) != sizeof(mctx)) {
       fprintf(stderr, "unable to read old context\n");

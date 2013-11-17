@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2008-2010 Message Systems, Inc. All rights reserved
+ * Copyright (c) 2013-present Facebook, Inc.
  * For licensing information, see:
  * https://bitbucket.org/wez/gimli/src/tip/LICENSE
  */
@@ -62,6 +63,31 @@ typedef void (*gimli_shutdown_func_t)(int signo, siginfo_t *si);
 
 /** register a shutdown function */
 void gimli_set_shutdown_func(gimli_shutdown_func_t func);
+
+#define GIMLI_TRACE_SECTION_NAME "gimli_trace"
+
+#ifdef __GNUC__
+# ifdef __MACH__
+#  define GIMLI_TRACER_SECTION \
+     __attribute__((section("__TEXT," GIMLI_TRACE_SECTION_NAME))) \
+     __attribute__((used))
+# else
+#  define GIMLI_TRACER_SECTION \
+     __attribute__((section(GIMLI_TRACE_SECTION_NAME))) \
+     __attribute__((used))
+# endif
+#else
+# define GIMLI_TRACER_SECTION /* nothing */
+#endif
+
+#define GIMLI_PASTE2(a, b) a ## b
+#define GIMLI_PASTE1(a, b) GIMLI_PASTE2(a, b)
+
+/* Usage: GIMLI_DECLARE_TRACE_MODULE("mymodule")
+ * You may omit the .so or .dylib suffix */
+#define GIMLI_DECLARE_TRACER_MODULE(name) \
+  static const char * GIMLI_TRACER_SECTION \
+    GIMLI_PASTE1(gimli_tracer_module_name_,__LINE__) = name
 
 #ifdef __cplusplus
 }

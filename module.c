@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2007-2012 Message Systems, Inc. All rights reserved
+ * Copyright (c) 2013-present Facebook, Inc.
  * For licensing information, see:
  * https://bitbucket.org/wez/gimli/src/tip/LICENSE
  */
@@ -125,28 +126,26 @@ static int load_module(const char *exename, const char *filename)
   return found;
 }
 
-static int load_module_for_file(gimli_mapped_object_t file)
+static int load_module_for_file_named(gimli_mapped_object_t file,
+    const char *name, int explicit_ask)
 {
-  struct gimli_symbol *sym;
-  char *name = NULL;
   char buf[1024];
   char buf2[1024];
   void *h;
   int res = 0;
+  const char *dot;
 
-  sym = gimli_sym_lookup(the_proc, file->objname, "gimli_tracer_module_name");
-  if (sym) {
-    name = gimli_read_string(the_proc, sym->addr);
-    if (debug) printf("[ %s requests tracing via %s ]\n", file->objname, name);
-  }
-  if (name == NULL) {
-    strcpy(buf, file->objname);
-    snprintf(buf2, sizeof(buf2)-1, "gimli_%s", basename(buf));
-    name = strdup(buf2);
-    if (debug) printf("[ %s: computed %s for tracing ]\n", file->objname, name);
-  }
+  if (debug) printf("[ %s requests tracing via %s ]\n", file->objname, name);
+
   strcpy(buf, file->objname);
-  snprintf(buf2, sizeof(buf2)-1, "%s/%s", dirname(buf), name);
+
+  dot = strrchr(name, '.');
+  if (!dot) {
+    dot = MODULE_SUFFIX;
+  }
+
+  snprintf(buf2, sizeof(buf2)-1, "%s/%s%s", dirname(buf), name, dot);
+
   if (debug) printf("[ %s: resolved module name to %s ]\n", file->objname, buf2);
 
   if (access(buf2, F_OK) == 0) {
@@ -154,11 +153,102 @@ static int load_module_for_file(gimli_mapped_object_t file)
     if (!res) {
       printf("Failed to load modules from %s\n", buf2);
     }
-  } else if (sym) {
+  } else if (explicit_ask) {
     printf("NOTE: module %s declared that its tracing "
         "should be performed by %s, but that module was not found (%s)\n",
         file->objname, buf2, strerror(errno));
   }
+}
+
+static int load_modules_from_trace_section(gimli_object_file_t file,
+    gimli_mapped_object_t via)
+{
+  struct gimli_section_data *s;
+  gimli_hash_t names;
+  char *name;
+  char **nameptr, **end;
+  int res = 1;
+
+  if (!file) {
+    // Can happen when target was deleted
+    return 0;
+  }
+
+  s = gimli_get_section_by_name(file, GIMLI_TRACE_SECTION_NAME);
+  if (!s) {
+    return 1;
+  }
+
+  if (debug) {
+    printf("[ %s has %s section with %d entries]\n",
+        via->objname, GIMLI_TRACE_SECTION_NAME,
+        (int)(s->size / sizeof(void*)));
+  }
+
+  // This section holds a sequence of pointers to strings that we need
+  // to read in, unique and load
+
+  names = gimli_hash_new(NULL);
+  nameptr = (char**)s->data;
+  end = (char**)(s->data + s->size);
+  while (nameptr < end) {
+    gimli_addr_t addr = via->base_addr + (gimli_addr_t)*nameptr;
+    name = gimli_read_string(the_proc, addr);
+    if (!name) {
+      printf("[ %s failed to read name from %s offset %d addr " PTRFMT "]\n",
+          via->objname, GIMLI_TRACE_SECTION_NAME,
+          (int)(((uint8_t*)nameptr - s->data) / sizeof(void*)),
+          addr);
+    } else {
+      if (gimli_hash_insert(names, name, name)) {
+        if (!load_module_for_file_named(via, name, 1)) {
+          res = 0;
+        }
+      }
+    }
+    nameptr++;
+  }
+
+  gimli_hash_destroy(names);
+  return res;
+}
+
+static int load_module_for_file(gimli_mapped_object_t file)
+{
+  struct gimli_symbol *sym;
+  char *name = NULL;
+  char buf[1024];
+  char buf2[1024];
+  void *h;
+  int res = 1;
+
+  if (file->aux_elf) {
+    if (!load_modules_from_trace_section(file->aux_elf, file)) {
+      res = 0;
+    }
+  }
+  if (!load_modules_from_trace_section(file->elf, file)) {
+    res = 0;
+  }
+
+  sym = gimli_sym_lookup(the_proc, file->objname, "gimli_tracer_module_name");
+  if (sym) {
+    name = gimli_read_string(the_proc, sym->addr);
+    if (!load_module_for_file_named(file, name, 1)) {
+      res = 0;
+    }
+    free(name);
+  }
+
+  strcpy(buf, file->objname);
+  snprintf(buf2, sizeof(buf2)-1, "gimli_%s", basename(buf));
+  name = strdup(buf2);
+  if (debug) printf("[ %s: computed %s for tracing ]\n", file->objname, name);
+
+  if (!load_module_for_file_named(file, name, 0)) {
+    res = 0;
+  }
+
   free(name);
 
   return res;
