@@ -29,18 +29,18 @@ DARWIN_DSYMUTIL="echo"
 case $host in
   *darwin*)
     LDFLAGS="-lpthread"
-    CORONER_LDFLAGS="-framework Security -framework CoreFoundation -sectcreate __TEXT __info_plist glider.plist"
+    CORONER_LDFLAGS="-framework Security -framework CoreFoundation -sectcreate __TEXT __info_plist glider.plist -export_dynamic"
     MODULE_SUFFIX=".bundle"
     SHLIB_SUFFIX=".dylib"
     RLDPATH="-R"
     DARWIN_DSYMUTIL="dsymutil -o .libs/wedgie.dSYM .libs/wedgie ; dsymutil -o .libs/libgimli.0.dylib.dSYM .libs/libgimli.0.dylib"
     ;;
   *linux*)
-    CORONER_LDFLAGS="-lthread_db -lpthread"
+    CORONER_LDFLAGS="-lthread_db -lpthread -Wl,--export-dynamic"
     RLDPATH="-Wl,-rpath="
     ;;
   *freebsd*)
-    CORONER_LDFLAGS="-lthread_db -lpthread"
+    CORONER_LDFLAGS="-lthread_db -lpthread -Wl,--export-dynamic"
     RLDPATH="-Wl,-rpath="
     ;;
   *solaris*)
