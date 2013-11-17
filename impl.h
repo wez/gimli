@@ -46,6 +46,7 @@
 #include <sys/stat.h>
 #include <sys/frame.h>
 #include <sys/stack.h>
+#include <limits.h>
 #endif
 #ifndef __MACH__
 #include <sys/procfs.h>

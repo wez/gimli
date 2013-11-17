@@ -15,6 +15,9 @@
 
 volatile struct gimli_heartbeat *hb;
 
+// For manually verifying the behavior
+GIMLI_DECLARE_TRACER_MODULE("invalid_lol");
+
 typedef int wedgie_t;
 enum wedgie_enum {
   wee_one,
