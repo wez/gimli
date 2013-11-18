@@ -38,7 +38,7 @@ static gimli_iter_status_t should_suppress_thread(
 
   if (mod->api_version == 2 && mod->ptr.v2->on_begin_thread_trace) {
     if (mod->ptr.v2->on_begin_thread_trace(&ana_api,
-        mod->exename, args->nthread,
+        mod->exename, args->thread->lwpid,
         gimli_stack_trace_num_frames(args->trace),
         args->pcaddrs, (void**)args->frames) == GIMLI_ANA_SUPPRESS) {
       args->suppress = 1;
@@ -56,7 +56,7 @@ static gimli_iter_status_t should_suppress_frame(
 
   if (mod->api_version == 2 && mod->ptr.v2->before_print_frame) {
     if (mod->ptr.v2->before_print_frame(&ana_api,
-          mod->exename, args->nthread, args->nframe,
+          mod->exename, args->thread->lwpid, args->nframe,
           args->pcaddrs[args->nframe], args->frames[args->nframe])
         == GIMLI_ANA_SUPPRESS) {
       args->suppress = 1;
@@ -73,7 +73,7 @@ static gimli_iter_status_t after_print_frame(
 
   if (mod->api_version == 2 && mod->ptr.v2->after_print_frame) {
     mod->ptr.v2->after_print_frame(&ana_api,
-        mod->exename, args->nthread, args->nframe,
+        mod->exename, args->thread->lwpid, args->nframe,
         args->pcaddrs[args->nframe], args->frames[args->nframe]);
   }
 
@@ -87,7 +87,7 @@ static gimli_iter_status_t after_print_thread(
 
   if (mod->api_version == 2 && mod->ptr.v2->on_end_thread_trace) {
     mod->ptr.v2->on_end_thread_trace(&ana_api,
-        mod->exename, args->nthread,
+        mod->exename, args->thread->lwpid,
         gimli_stack_trace_num_frames(args->trace),
         args->pcaddrs, (void**)args->frames);
   }
