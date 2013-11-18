@@ -86,8 +86,8 @@ void gimli_set_shutdown_func(gimli_shutdown_func_t func);
 /* Usage: GIMLI_DECLARE_TRACE_MODULE("mymodule")
  * You may omit the .so or .dylib suffix */
 #define GIMLI_DECLARE_TRACER_MODULE(name) \
-  static const char * GIMLI_TRACER_SECTION \
-    GIMLI_PASTE1(gimli_tracer_module_name_,__LINE__) = name
+  static const char GIMLI_TRACER_SECTION \
+    GIMLI_PASTE1(gimli_tracer_module_name_,__LINE__)[] = name
 
 #ifdef __cplusplus
 }
