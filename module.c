@@ -166,7 +166,7 @@ static int load_modules_from_trace_section(gimli_object_file_t file,
   struct gimli_section_data *s;
   gimli_hash_t names;
   char *name;
-  char **nameptr, **end;
+  char *end;
   int res = 1;
 
   if (!file) {
@@ -179,34 +179,23 @@ static int load_modules_from_trace_section(gimli_object_file_t file,
     return 1;
   }
 
-  if (debug) {
-    printf("[ %s has %s section with %d entries]\n",
-        via->objname, GIMLI_TRACE_SECTION_NAME,
-        (int)(s->size / sizeof(void*)));
-  }
-
-  // This section holds a sequence of pointers to strings that we need
+  // This section holds a sequence of strings that we need
   // to read in, unique and load
 
   names = gimli_hash_new(NULL);
-  nameptr = (char**)s->data;
-  end = (char**)(s->data + s->size);
-  while (nameptr < end) {
-    gimli_addr_t addr = via->base_addr + (gimli_addr_t)*nameptr;
-    name = gimli_read_string(the_proc, addr);
-    if (!name) {
-      printf("[ %s failed to read name from %s offset %d addr " PTRFMT "]\n",
-          via->objname, GIMLI_TRACE_SECTION_NAME,
-          (int)(((uint8_t*)nameptr - s->data) / sizeof(void*)),
-          addr);
-    } else {
-      if (gimli_hash_insert(names, name, name)) {
-        if (!load_module_for_file_named(via, name, 1)) {
-          res = 0;
-        }
+  name = (char*)s->data;
+  end = name + s->size;
+  while (name < end) {
+    if (gimli_hash_insert(names, name, name)) {
+      if (!load_module_for_file_named(via, name, 1)) {
+        res = 0;
       }
     }
-    nameptr++;
+    name += strlen(name) + 1;
+    // Deal with padding/alignment
+    while (name < end && *name == 0) {
+      name++;
+    }
   }
 
   gimli_hash_destroy(names);
