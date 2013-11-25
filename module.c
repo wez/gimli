@@ -20,6 +20,7 @@ static STAILQ_HEAD(modulelist, module_item)
   modules = STAILQ_HEAD_INITIALIZER(modules);
 
 static gimli_hash_t hooks = NULL;
+static gimli_hash_t loaded_modules = NULL;
 
 gimli_iter_status_t gimli_visit_modules(gimli_module_visit_f func, void *arg)
 {
@@ -87,11 +88,21 @@ static int load_module(const char *exename, const char *filename)
   int (*modinit)(int);
   int found = 0;
 
+  if (!loaded_modules) {
+    loaded_modules = gimli_hash_new(NULL);
+  }
+
+  if (gimli_hash_find(loaded_modules, filename, &h)) {
+    return 1;
+  }
+  gimli_hash_insert(loaded_modules, filename, (void*)filename);
+
   h = dlopen(filename, RTLD_NOW|RTLD_GLOBAL);
   if (!h) {
     printf("Unable to load library: %s: %s\n", filename, dlerror());
     return 0;
   }
+  printf("Loaded tracer module %s for %s\n", filename, exename);
 
   modinit = (int (*)(int))dlsym(h, "gimli_module_init");
   if (modinit) {
@@ -133,20 +144,28 @@ static int load_module_for_file_named(gimli_mapped_object_t file,
   char buf2[1024];
   void *h;
   int res = 0;
-  const char *dot;
+  char *dot;
+  int namelen;
 
-  if (debug) printf("[ %s requests tracing via %s ]\n", file->objname, name);
+  if (debug) {
+    if (explicit_ask) {
+      printf("[ %s requests tracing via %s ]\n", file->objname, name);
+    } else {
+      printf("[ %s inferring tracer module, maybe %s ]\n", file->objname, name);
+    }
+  }
 
   strcpy(buf, file->objname);
 
-  dot = strrchr(name, '.');
-  if (!dot) {
-    dot = MODULE_SUFFIX;
+  namelen = strlen(name);
+  dot = strchr(name, '.');
+  if (dot) {
+    namelen = dot - name;
   }
 
-  snprintf(buf2, sizeof(buf2)-1, "%s/%s%s", dirname(buf), name, dot);
+  snprintf(buf2, sizeof(buf2)-1, "%s/%.*s%s", dirname(buf), namelen, name, MODULE_SUFFIX);
 
-  if (debug) printf("[ %s: resolved module name to %s ]\n", file->objname, buf2);
+  if (debug) printf("[ %s: resolved module tracer name to %s ]\n", file->objname, buf2);
 
   if (access(buf2, F_OK) == 0) {
     res = load_module(file->objname, buf2);
@@ -158,6 +177,7 @@ static int load_module_for_file_named(gimli_mapped_object_t file,
         "should be performed by %s, but that module was not found (%s)\n",
         file->objname, buf2, strerror(errno));
   }
+  return res;
 }
 
 static int load_modules_from_trace_section(gimli_object_file_t file,
