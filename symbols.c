@@ -328,7 +328,7 @@ struct gimli_symbol *gimli_sym_lookup(gimli_proc_t proc, const char *obj, const 
   if (obj == NULL) {
     gimli_hash_iter(proc->files, search_for_sym, &find);
     if (debug) {
-      printf("sym_lookup: %s => " PTRFMT "\n", name, sym ? sym->addr : 0);
+      printf("sym_lookup: %s => " PTRFMT "\n", name, find.sym ? find.sym->addr : 0);
     }
     return find.sym;
   }
@@ -366,4 +366,3 @@ struct gimli_symbol *gimli_sym_lookup(gimli_proc_t proc, const char *obj, const 
 
 /* vim:ts=2:sw=2:et:
  */
-
